@@ -71,6 +71,18 @@ Fetch full email content by UID.
 node scripts/imap.js fetch <uid> [--mailbox INBOX]
 ```
 
+### download
+Download all attachments from an email, or a specific attachment.
+
+```bash
+node scripts/imap.js download <uid> [--mailbox INBOX] [--dir <path>] [--file <filename>]
+```
+
+Options:
+- `--mailbox <name>`: Mailbox (default: INBOX)
+- `--dir <path>`: Output directory (default: current directory)
+- `--file <filename>`: Download only the specified attachment (default: download all)
+
 ### search
 Search emails with filters.
 

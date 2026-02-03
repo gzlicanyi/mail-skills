@@ -9,6 +9,7 @@
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 // IMAP ID information for 163.com compatibility
@@ -160,7 +161,7 @@ function searchMessages(imap, criteria, fetchOptions) {
 }
 
 // Parse email from raw buffer
-async function parseEmail(bodyStr) {
+async function parseEmail(bodyStr, includeAttachments = false) {
   const parsed = await simpleParser(bodyStr);
 
   return {
@@ -177,6 +178,8 @@ async function parseEmail(bodyStr) {
       filename: a.filename,
       contentType: a.contentType,
       size: a.size,
+      content: includeAttachments ? a.content : undefined,
+      cid: a.cid,
     })),
   };
 }
@@ -256,6 +259,79 @@ async function fetchEmail(uid, mailbox = DEFAULT_MAILBOX) {
       uid: item.attributes.uid,
       ...parsed,
       flags: item.attributes.flags,
+    };
+  } finally {
+    imap.end();
+  }
+}
+
+// Download attachments from email
+async function downloadAttachments(uid, mailbox = DEFAULT_MAILBOX, outputDir = '.', specificFilename = null) {
+  const imap = await connect();
+
+  try {
+    await openBox(imap, mailbox);
+
+    const searchCriteria = [['UID', uid]];
+    const fetchOptions = {
+      bodies: [''],
+      markSeen: false,
+    };
+
+    const messages = await searchMessages(imap, searchCriteria, fetchOptions);
+
+    if (messages.length === 0) {
+      throw new Error(`Message UID ${uid} not found`);
+    }
+
+    const item = messages[0];
+    const parsed = await parseEmail(item.body, true);
+
+    if (!parsed.attachments || parsed.attachments.length === 0) {
+      return {
+        uid,
+        downloaded: [],
+        message: 'No attachments found',
+      };
+    }
+
+    // Create output directory if it doesn't exist
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const downloaded = [];
+
+    for (const attachment of parsed.attachments) {
+      // If specificFilename is provided, only download matching attachment
+      if (specificFilename && attachment.filename !== specificFilename) {
+        continue;
+      }
+      if (attachment.content) {
+        const filePath = path.join(outputDir, attachment.filename);
+        fs.writeFileSync(filePath, attachment.content);
+        downloaded.push({
+          filename: attachment.filename,
+          path: filePath,
+          size: attachment.size,
+        });
+      }
+    }
+
+    // If specific file was requested but not found
+    if (specificFilename && downloaded.length === 0) {
+      const availableFiles = parsed.attachments.map(a => a.filename).join(', ');
+      return {
+        uid,
+        downloaded: [],
+        message: `File "${specificFilename}" not found. Available attachments: ${availableFiles}`,
+      };
+    }
+
+    return {
+      uid,
+      downloaded,
+      message: `Downloaded ${downloaded.length} attachment(s)`,
     };
   } finally {
     imap.end();
@@ -438,6 +514,13 @@ async function main() {
         result = await fetchEmail(positional[0], options.mailbox);
         break;
 
+      case 'download':
+        if (!positional[0]) {
+          throw new Error('UID required: node imap.js download <uid>');
+        }
+        result = await downloadAttachments(positional[0], options.mailbox, options.dir || '.', options.file || null);
+        break;
+
       case 'search':
         result = await searchEmails(options);
         break;
@@ -462,7 +545,7 @@ async function main() {
 
       default:
         console.error('Unknown command:', command);
-        console.error('Available commands: check, fetch, search, mark-read, mark-unread, list-mailboxes');
+        console.error('Available commands: check, fetch, download, search, mark-read, mark-unread, list-mailboxes');
         process.exit(1);
     }
 
