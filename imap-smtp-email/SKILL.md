@@ -1,6 +1,46 @@
 ---
 name: imap-smtp-email
 description: Read and send email via IMAP/SMTP. Check for new/unread messages, fetch content, search mailboxes, mark as read/unread, and send emails with attachments. Works with any IMAP/SMTP server including Gmail, Outlook, 163.com, vip.163.com, 126.com, vip.126.com, 188.com, and vip.188.com.
+metadata:
+  env_vars:
+    - name: IMAP_HOST
+      description: "IMAP server hostname (e.g., imap.gmail.com)"
+      required: true
+    - name: IMAP_PORT
+      description: "IMAP server port (default: 993)"
+      required: false
+    - name: IMAP_USER
+      description: "IMAP username (usually full email address)"
+      required: true
+    - name: IMAP_PASS
+      description: "IMAP password or app-specific password"
+      required: true
+      sensitive: true
+    - name: IMAP_TLS
+      description: "Use TLS/SSL connection for IMAP"
+      required: false
+    - name: IMAP_MAILBOX
+      description: "Default mailbox name (default: INBOX)"
+      required: false
+    - name: SMTP_HOST
+      description: "SMTP server hostname (e.g., smtp.gmail.com)"
+      required: true
+    - name: SMTP_PORT
+      description: "SMTP server port (default: 587)"
+      required: false
+    - name: SMTP_USER
+      description: "SMTP username (usually full email address)"
+      required: true
+    - name: SMTP_PASS
+      description: "SMTP password or app-specific password"
+      required: true
+      sensitive: true
+    - name: SMTP_SECURE
+      description: "Use SSL for SMTP (true for port 465, false for STARTTLS on port 587)"
+      required: false
+    - name: SMTP_FROM
+      description: "Default sender email address"
+      required: false
 ---
 
 # IMAP/SMTP Email Tool

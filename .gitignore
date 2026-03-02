@@ -1,0 +1,44 @@
+# Created by .ignore support plugin (hsz.mobi)
+### Eclipse template
+
+/.project
+**/target/
+/.classpath
+/.settings/
+**/logs/
+/.DS_Store
+
+### Idea
+/.idea/
+
+TS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+
+### IntelliJ IDEA ###
+**.idea
+**.idea/
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+
+logs/
+
+### tomcat
+**/classes
+
+**/dependency-reduced-pom.xml
+
