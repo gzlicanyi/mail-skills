@@ -41,6 +41,12 @@ metadata:
     - name: SMTP_FROM
       description: "Default sender email address"
       required: false
+    - name: IMAP_REJECT_UNAUTHORIZED
+      description: "Reject self-signed TLS certificates for IMAP (set to 'false' to accept self-signed certs)"
+      required: false
+    - name: SMTP_REJECT_UNAUTHORIZED
+      description: "Reject self-signed TLS certificates for SMTP (set to 'false' to accept self-signed certs)"
+      required: false
 ---
 
 # IMAP/SMTP Email Tool

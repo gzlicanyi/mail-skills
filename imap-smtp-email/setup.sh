@@ -124,13 +124,11 @@ echo ""
 read -p "Email address: " EMAIL
 read -s -p "Password / App Password / Authorization Code: " PASSWORD
 echo ""
-if [ -z "$REJECT_UNAUTHORIZED" ]; then
-  read -p "Accept self-signed certificates? (y/n): " ACCEPT_CERT
-  if [ "$ACCEPT_CERT" = "y" ]; then
-    REJECT_UNAUTHORIZED="false"
-  else
-    REJECT_UNAUTHORIZED="true"
-  fi
+read -p "Accept self-signed certificates? (y/n): " ACCEPT_CERT
+if [ "$ACCEPT_CERT" = "y" ]; then
+  REJECT_UNAUTHORIZED="false"
+else
+  REJECT_UNAUTHORIZED="true"
 fi
 
 # Create .env file
@@ -156,6 +154,8 @@ EOF
 
 echo ""
 echo "✅ Created .env file"
+chmod 600 .env
+echo "✅ Set .env file permissions to 600 (owner read/write only)"
 echo ""
 echo "Testing connections..."
 echo ""
@@ -172,6 +172,7 @@ fi
 # Test SMTP connection
 echo ""
 echo "Testing SMTP..."
+echo "  (This will send a test email to your own address: $EMAIL)"
 if node scripts/smtp.js test >/dev/null 2>&1; then
     echo "✅ SMTP connection successful!"
 else
