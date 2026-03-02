@@ -42,3 +42,11 @@ logs/
 
 **/dependency-reduced-pom.xml
 
+### Credentials
+.env
+*.env
+credentials.json
+*.secret
+*.key
+
+/.claude/
