@@ -8,7 +8,37 @@
 
 const nodemailer = require('nodemailer');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
+function validateReadPath(inputPath) {
+  let realPath;
+  try {
+    realPath = fs.realpathSync(inputPath);
+  } catch {
+    realPath = path.resolve(inputPath);
+  }
+
+  const allowedDirsStr = process.env.ALLOWED_READ_DIRS;
+  if (!allowedDirsStr) {
+    throw new Error('ALLOWED_READ_DIRS not set in .env. File read operations are disabled.');
+  }
+
+  const allowedDirs = allowedDirsStr.split(',').map(d =>
+    path.resolve(d.trim().replace(/^~/, os.homedir()))
+  );
+
+  const allowed = allowedDirs.some(dir =>
+    realPath === dir || realPath.startsWith(dir + path.sep)
+  );
+
+  if (!allowed) {
+    throw new Error(`Access denied: '${inputPath}' is outside allowed read directories`);
+  }
+
+  return realPath;
+}
 
 // Parse command-line arguments
 function parseArgs() {
@@ -94,7 +124,7 @@ async function sendEmail(options) {
 
 // Read file content for attachments
 function readAttachment(filePath) {
-  const fs = require('fs');
+  validateReadPath(filePath);
   if (!fs.existsSync(filePath)) {
     throw new Error(`Attachment file not found: ${filePath}`);
   }
@@ -157,13 +187,13 @@ async function main() {
 
         // Read subject from file if specified
         if (options['subject-file']) {
-          const fs = require('fs');
+          validateReadPath(options['subject-file']);
           options.subject = fs.readFileSync(options['subject-file'], 'utf8').trim();
         }
 
         // Read body from file if specified
         if (options['body-file']) {
-          const fs = require('fs');
+          validateReadPath(options['body-file']);
           const content = fs.readFileSync(options['body-file'], 'utf8');
           if (options['body-file'].endsWith('.html') || options.html) {
             options.html = content;
@@ -171,7 +201,7 @@ async function main() {
             options.text = content;
           }
         } else if (options['html-file']) {
-          const fs = require('fs');
+          validateReadPath(options['html-file']);
           options.html = fs.readFileSync(options['html-file'], 'utf8');
         } else if (options.body) {
           options.text = options.body;

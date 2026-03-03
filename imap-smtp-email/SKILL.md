@@ -61,6 +61,12 @@ SMTP_REJECT_UNAUTHORIZED=true     # Set to false for self-signed certs
 | Outlook | outlook.office365.com | 993 | smtp.office365.com | 587 |
 | QQ Mail | imap.qq.com | 993 | smtp.qq.com | 587 |
 
+**Important for Gmail:**
+- Gmail does **not** accept your regular account password
+- You must generate an **App Password**: https://myaccount.google.com/apppasswords
+- Use the generated 16-character App Password as `IMAP_PASS` / `SMTP_PASS`
+- Requires Google Account with 2-Step Verification enabled
+
 **Important for 163.com:**
 - Use **authorization code** (授权码), not account password
 - Enable IMAP/SMTP in web settings first
@@ -185,7 +191,7 @@ npm install
 ## Security Notes
 
 - Store credentials in `.env` (add to `.gitignore`)
-- For Gmail: use App Password if 2FA is enabled
+- **Gmail**: regular password is rejected — generate an App Password at https://myaccount.google.com/apppasswords
 - For 163.com: use authorization code (授权码), not account password
 
 ## Troubleshooting
@@ -198,7 +204,7 @@ npm install
 - Verify username (usually full email address)
 - Check password is correct
 - For 163.com: use authorization code, not account password
-- For Gmail: use App Password if 2FA enabled
+- For Gmail: regular password won't work — generate an App Password at https://myaccount.google.com/apppasswords
 
 **TLS/SSL errors:**
 - Match `IMAP_TLS`/`SMTP_SECURE` setting to server requirements

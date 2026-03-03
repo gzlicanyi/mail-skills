@@ -10,7 +10,35 @@ const Imap = require('imap');
 const { simpleParser } = require('mailparser');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
+function validateWritePath(dirPath) {
+  const allowedDirsStr = process.env.ALLOWED_WRITE_DIRS;
+  if (!allowedDirsStr) {
+    throw new Error('ALLOWED_WRITE_DIRS not set in .env. Attachment download is disabled.');
+  }
+
+  const resolved = path.resolve(dirPath.replace(/^~/, os.homedir()));
+
+  const allowedDirs = allowedDirsStr.split(',').map(d =>
+    path.resolve(d.trim().replace(/^~/, os.homedir()))
+  );
+
+  const allowed = allowedDirs.some(dir =>
+    resolved === dir || resolved.startsWith(dir + path.sep)
+  );
+
+  if (!allowed) {
+    throw new Error(`Access denied: '${dirPath}' is outside allowed write directories`);
+  }
+
+  return resolved;
+}
+
+function sanitizeFilename(filename) {
+  return path.basename(filename).replace(/\.\./g, '').replace(/^[./\\]/, '') || 'attachment';
+}
 
 // IMAP ID information for 163.com compatibility
 const IMAP_ID = {
@@ -296,8 +324,9 @@ async function downloadAttachments(uid, mailbox = DEFAULT_MAILBOX, outputDir = '
     }
 
     // Create output directory if it doesn't exist
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+    const resolvedDir = validateWritePath(outputDir);
+    if (!fs.existsSync(resolvedDir)) {
+      fs.mkdirSync(resolvedDir, { recursive: true });
     }
 
     const downloaded = [];
@@ -308,7 +337,7 @@ async function downloadAttachments(uid, mailbox = DEFAULT_MAILBOX, outputDir = '
         continue;
       }
       if (attachment.content) {
-        const filePath = path.join(outputDir, attachment.filename);
+        const filePath = path.join(resolvedDir, sanitizeFilename(attachment.filename));
         fs.writeFileSync(filePath, attachment.content);
         downloaded.push({
           filename: attachment.filename,
