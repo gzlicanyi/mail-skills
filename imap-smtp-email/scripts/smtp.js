@@ -10,7 +10,7 @@ const nodemailer = require('nodemailer');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+const config = require('./config');
 
 function validateReadPath(inputPath) {
   let realPath;
@@ -20,13 +20,12 @@ function validateReadPath(inputPath) {
     realPath = path.resolve(inputPath);
   }
 
-  const allowedDirsStr = process.env.ALLOWED_READ_DIRS;
-  if (!allowedDirsStr) {
+  if (!config.allowedReadDirs.length) {
     throw new Error('ALLOWED_READ_DIRS not set in .env. File read operations are disabled.');
   }
 
-  const allowedDirs = allowedDirsStr.split(',').map(d =>
-    path.resolve(d.trim().replace(/^~/, os.homedir()))
+  const allowedDirs = config.allowedReadDirs.map(d =>
+    path.resolve(d.replace(/^~/, os.homedir()))
   );
 
   const allowed = allowedDirs.some(dir =>
@@ -64,24 +63,22 @@ function parseArgs() {
 
 // Create SMTP transporter
 function createTransporter() {
-  const config = {
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    tls: {
-      rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false',
-    },
-  };
-
-  if (!config.host || !config.auth.user || !config.auth.pass) {
-    throw new Error('Missing SMTP configuration. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS in .env');
+  if (!config.smtp.host || !config.smtp.user || !config.smtp.pass) {
+    throw new Error('Missing SMTP configuration. Check your config at ~/.config/imap-smtp-email/.env');
   }
 
-  return nodemailer.createTransport(config);
+  return nodemailer.createTransport({
+    host: config.smtp.host,
+    port: config.smtp.port,
+    secure: config.smtp.secure,
+    auth: {
+      user: config.smtp.user,
+      pass: config.smtp.pass,
+    },
+    tls: {
+      rejectUnauthorized: config.smtp.rejectUnauthorized,
+    },
+  });
 }
 
 // Send email
@@ -97,7 +94,7 @@ async function sendEmail(options) {
   }
 
   const mailOptions = {
-    from: options.from || process.env.SMTP_FROM || process.env.SMTP_USER,
+    from: options.from || config.smtp.from,
     to: options.to,
     cc: options.cc || undefined,
     bcc: options.bcc || undefined,
@@ -152,8 +149,8 @@ async function testConnection() {
   try {
     await transporter.verify();
     const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: process.env.SMTP_USER, // Send to self
+      from: config.smtp.from || config.smtp.user,
+      to: config.smtp.user,
       subject: 'SMTP Connection Test',
       text: 'This is a test email from the IMAP/SMTP email skill.',
       html: '<p>This is a <strong>test email</strong> from the IMAP/SMTP email skill.</p>',
