@@ -91,7 +91,7 @@ ALLOWED_WRITE_DIRS=~/Downloads
 Shared config loader used by both `imap.js` and `smtp.js`. Tracked in git.
 
 **Responsibilities:**
-1. Locate `.env`: check `~/.config/imap-smtp-email/.env` first, fall back to `<skill-dir>/.env`
+1. Locate `.env`: check `~/.config/imap-smtp-email/.env` first, fall back to `path.resolve(__dirname, '../.env')` (i.e., `<skill-dir>/.env`, since `config.js` lives in `scripts/`)
 2. Parse and strip `--account <name>` from `process.argv` **before** returning; modifies `process.argv` in-place so the caller's arg parsing always sees the command at `args[0]`
 3. Build config object: if account name given, read `NAME_IMAP_*` / `NAME_SMTP_*` vars; otherwise read unprefixed vars
 4. Always read `ALLOWED_READ_DIRS` / `ALLOWED_WRITE_DIRS` without prefix
@@ -130,7 +130,7 @@ Shared config loader used by both `imap.js` and `smtp.js`. Tracked in git.
 
 - Remove direct `process.env` reads for SMTP connection settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `SMTP_FROM`, `SMTP_REJECT_UNAUTHORIZED`)
 - Import config from `./config`
-- Update `testConnection()`: replace `process.env.SMTP_FROM` and `process.env.SMTP_USER` with `config.smtp.from || config.smtp.user`
+- Update `testConnection()`: replace both `process.env.SMTP_FROM`/`process.env.SMTP_USER` references with `config.smtp.from || config.smtp.user` (for `from`) and `config.smtp.user` (for `to`)
 - No change to command interface or business logic
 
 ### Modified: `setup.sh`
@@ -156,9 +156,10 @@ Shared config loader used by both `imap.js` and `smtp.js`. Tracked in git.
    - Add new account: append NAME_-prefixed vars only (cat >> file)
      Shared settings are NOT re-prompted or re-written (already present from default setup)
    - Reconfigure default account (file exists, user chose overwrite):
-     Write to a temp file, then replace: merge unprefixed vars from new input
-     with existing NAME_-prefixed vars from the old file, then mv temp → .env
-     Shared settings are re-prompted and re-written
+     Merge algorithm: (1) read old file, keep only lines that start with a `NAME_` prefix
+     (i.e., strip all unprefixed lines including old shared settings and old default account vars);
+     (2) write new unprefixed account vars + new shared settings + retained NAME_-prefixed lines
+     to a temp file; (3) mv temp → .env. This prevents duplicate ALLOWED_READ_DIRS entries.
 
 5. chmod 600 ~/.config/imap-smtp-email/.env
 
