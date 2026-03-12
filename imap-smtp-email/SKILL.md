@@ -22,7 +22,7 @@ Run the setup script to configure your email account:
 bash setup.sh
 ```
 
-Configuration is stored at `~/.config/imap-smtp-email/.env` (survives skill updates).
+Configuration is stored at `~/.config/imap-smtp-email/.env` (survives skill updates). If no config is found there, the skill falls back to a `.env` file in the skill directory (for backward compatibility).
 
 ### Config file format
 
@@ -39,9 +39,9 @@ IMAP_MAILBOX=INBOX
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
-SMTP_USER=your@gmail.com
+SMTP_USER=your@email.com
 SMTP_PASS=your_password
-SMTP_FROM=your@gmail.com
+SMTP_FROM=your@email.com
 SMTP_REJECT_UNAUTHORIZED=true
 
 # File access whitelist (security)
@@ -97,6 +97,7 @@ Without `--account`, the default (unprefixed) account is used.
 - Letters and digits only (e.g., `work`, `163`, `personal2`)
 - Case-insensitive: `work` and `WORK` refer to the same account
 - The prefix in `.env` is always uppercase (e.g., `WORK_IMAP_HOST`)
+- `ALLOWED_READ_DIRS` and `ALLOWED_WRITE_DIRS` are shared across all accounts (always unprefixed)
 
 ## Common Email Servers
 
