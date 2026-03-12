@@ -92,10 +92,17 @@ Shared config loader used by both `imap.js` and `smtp.js`. Tracked in git.
 
 **Responsibilities:**
 1. Locate `.env`: check `~/.config/imap-smtp-email/.env` first, fall back to `<skill-dir>/.env`
-2. Parse `--account <name>` from `process.argv`
+2. Parse and strip `--account <name>` from `process.argv` **before** returning; modifies `process.argv` in-place so the caller's arg parsing always sees the command at `args[0]`
 3. Build config object: if account name given, read `NAME_IMAP_*` / `NAME_SMTP_*` vars; otherwise read unprefixed vars
 4. Always read `ALLOWED_READ_DIRS` / `ALLOWED_WRITE_DIRS` without prefix
-5. Export a single config object
+5. Export a single config object and the remaining `args` array (post-stripping)
+
+**Arg stripping contract:**
+```js
+// config.js strips --account and its value from process.argv[2..]
+// After require('./config'), process.argv[2] is always the command
+// e.g. `node imap.js --account work check` → args = ['check']
+```
 
 **Exported shape:**
 ```js
@@ -107,19 +114,24 @@ Shared config loader used by both `imap.js` and `smtp.js`. Tracked in git.
 }
 ```
 
-**Error handling:**
-- If `--account work` is given but `WORK_IMAP_HOST` is not set → exit with clear error message: `Account "work" not found in config. Check ~/.config/imap-smtp-email/.env`
+**Account existence check:**
+- An account is considered "found" if `NAME_IMAP_HOST` is present in the loaded env
+- If `--account work` is given but `WORK_IMAP_HOST` is not set → exit with error: `Account "work" not found in config. Check ~/.config/imap-smtp-email/.env`
+- Partial accounts (e.g., IMAP vars present but no SMTP vars) are not validated at load time; missing fields will produce errors at connection time
 
 ### Modified: `scripts/imap.js`
 
-- Remove direct `process.env` reads for connection settings
-- Import config from `./config`
-- Pass `--account` parsing to `config.js` (strip it from args before command parsing)
+- Remove direct `process.env` reads for IMAP connection settings (`IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASS`, `IMAP_TLS`, `IMAP_REJECT_UNAUTHORIZED`, `IMAP_MAILBOX`)
+- Import config from `./config` (which also strips `--account` from `process.argv`)
+- After `require('./config')`, treat `process.argv[2]` as the command (same as today)
 - No change to command interface or business logic
 
 ### Modified: `scripts/smtp.js`
 
-- Same changes as `imap.js`
+- Remove direct `process.env` reads for SMTP connection settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `SMTP_FROM`, `SMTP_REJECT_UNAUTHORIZED`)
+- Import config from `./config`
+- Update `testConnection()`: replace `process.env.SMTP_FROM` and `process.env.SMTP_USER` with `config.smtp.from || config.smtp.user`
+- No change to command interface or business logic
 
 ### Modified: `setup.sh`
 
@@ -128,33 +140,48 @@ Shared config loader used by both `imap.js` and `smtp.js`. Tracked in git.
 ```
 1. Detect if ~/.config/imap-smtp-email/.env already exists
    - If yes: ask "Configure default account (overwrite) or add new account?"
-   - If no: proceed to configure default account
+   - If no: first-time setup → configure default account
 
 2. If adding new account:
    - Prompt: "Account name (letters/digits only, e.g. work):"
-   - Validate: reject if empty or contains invalid characters
+   - Validate: reject if empty or contains non-alphanumeric characters
    - Use NAME_ prefix when writing variables
 
 3. Provider selection + credential prompts (unchanged)
 
 4. Write to ~/.config/imap-smtp-email/.env
-   - Default account: overwrite unprefixed vars
-   - New account: append NAME_-prefixed vars
-   - Shared settings (ALLOWED_READ_DIRS etc): only written when configuring default account
+   - mkdir -p ~/.config/imap-smtp-email
+   - First-time / default account: write the full file (cat > file)
+     Includes both unprefixed account vars AND shared settings (ALLOWED_READ_DIRS, ALLOWED_WRITE_DIRS)
+   - Add new account: append NAME_-prefixed vars only (cat >> file)
+     Shared settings are NOT re-prompted or re-written (already present from default setup)
+   - Reconfigure default account (file exists, user chose overwrite):
+     Write to a temp file, then replace: merge unprefixed vars from new input
+     with existing NAME_-prefixed vars from the old file, then mv temp → .env
+     Shared settings are re-prompted and re-written
 
 5. chmod 600 ~/.config/imap-smtp-email/.env
 
-6. Test connection using --account flag if applicable
+6. Test connection:
+   - Default account: node scripts/imap.js list-mailboxes
+                      node scripts/smtp.js test
+   - Named account:   node scripts/imap.js --account <name> list-mailboxes
+                      node scripts/smtp.js --account <name> test
 ```
+
+**Edge case: user tries to add named account before default is configured**
+
+If `~/.config/imap-smtp-email/.env` does not exist and user somehow reaches "add new account" mode, setup.sh must first prompt for shared settings (`ALLOWED_READ_DIRS`, `ALLOWED_WRITE_DIRS`) before writing the named account, since no prior config file exists to inherit them from.
 
 ### Modified: `SKILL.md`
 
 - Add `--account <name>` to all command examples
 - Add "Multi-Account" section explaining:
-  - Config file location
+  - Config file location (`~/.config/imap-smtp-email/.env`)
   - How to add accounts via `setup.sh`
-  - Account name rules
-  - Default account convention
+  - Account name rules (letters/digits only)
+  - Default account convention (unprefixed vars)
+- Update `metadata.openclaw.requires.env`: remove the listed env var names (they no longer need to be in process environment); replace with a note that config is read from `~/.config/imap-smtp-email/.env`. The `primaryEnv` field can be removed or set to a placeholder since auth is file-based.
 
 ---
 
