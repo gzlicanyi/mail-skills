@@ -34,6 +34,15 @@ if [ -f "$CONFIG_FILE" ]; then
         read -p "Account name (letters/digits only, e.g. work): " ACCOUNT_NAME
         if [[ "$ACCOUNT_NAME" =~ ^[a-zA-Z0-9]+$ ]]; then
           ACCOUNT_PREFIX="$(echo "$ACCOUNT_NAME" | tr '[:lower:]' '[:upper:]')_"
+          # Check if account already exists
+          if grep -q "^${ACCOUNT_PREFIX}IMAP_HOST=" "$CONFIG_FILE" 2>/dev/null; then
+            read -p "Account \"$ACCOUNT_NAME\" already exists. Overwrite? (y/n): " OVERWRITE
+            if [ "$OVERWRITE" != "y" ]; then
+              echo "Aborted."
+              exit 0
+            fi
+            SETUP_MODE="overwrite"
+          fi
           break
         else
           echo "Invalid name. Use only letters and digits."
@@ -183,9 +192,6 @@ fi
 ASK_SHARED=false
 if [ "$SETUP_MODE" = "default" ] || [ "$SETUP_MODE" = "reconfigure" ]; then
   ASK_SHARED=true
-elif [ "$SETUP_MODE" = "add" ] && [ ! -f "$CONFIG_FILE" ]; then
-  # Edge case: adding named account but no config file exists yet
-  ASK_SHARED=true
 fi
 
 if [ "$ASK_SHARED" = true ]; then
@@ -194,7 +200,7 @@ if [ "$ASK_SHARED" = true ]; then
 fi
 
 # Create config directory
-mkdir -p "$CONFIG_DIR"
+mkdir -p -m 700 "$CONFIG_DIR"
 
 # Build account variables block
 ACCOUNT_VARS="# ${ACCOUNT_NAME:-Default} account
@@ -250,15 +256,16 @@ EOF
     # Append named account to existing file
     echo "" >> "$CONFIG_FILE"
     echo "$ACCOUNT_VARS" >> "$CONFIG_FILE"
-    # If shared settings were needed (edge case: no prior config)
-    if [ "$ASK_SHARED" = true ]; then
-      cat >> "$CONFIG_FILE" << EOF
-
-# File access whitelist (security)
-ALLOWED_READ_DIRS=${ALLOWED_READ_DIRS:-$HOME/Downloads,$HOME/Documents}
-ALLOWED_WRITE_DIRS=${ALLOWED_WRITE_DIRS:-$HOME/Downloads}
-EOF
-    fi
+    ;;
+  "overwrite")
+    # Strip existing lines with this account prefix, then append new ones
+    TEMP_FILE=$(mktemp)
+    grep -v "^${ACCOUNT_PREFIX}\(IMAP_\|SMTP_\)" "$CONFIG_FILE" | grep -v "^# ${ACCOUNT_NAME} account" > "$TEMP_FILE" 2>/dev/null || true
+    # Remove trailing blank lines
+    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$TEMP_FILE"
+    echo "" >> "$TEMP_FILE"
+    echo "$ACCOUNT_VARS" >> "$TEMP_FILE"
+    mv "$TEMP_FILE" "$CONFIG_FILE"
     ;;
 esac
 
