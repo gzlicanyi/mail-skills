@@ -12,6 +12,7 @@
 - **Manage Emails** - Mark as read/unread, list mailboxes
 - **Send Emails** - Send text/HTML emails with attachments
 - **Download Attachments** - Download all or specific attachments from emails
+- **Multi-Account** - Configure multiple email accounts and switch with `--account <name>`
 - **Multi-Platform** - Works with Claude Code, OpenClaw, and other skill-based AI platforms
 - **Multi-Provider Support** - Optimized for NetEase mailboxes (163.com, 126.com, 188.com) with support for Gmail, Outlook, and any standard IMAP/SMTP server
 
@@ -50,26 +51,19 @@ cp -r mail-skills/imap-smtp-email ~/.openclaw/skills/
 
 ## ⚙️ Configuration
 
-Create a `.env` file in the skill directory with your email credentials:
+Run the setup script to configure your email account:
 
 ```bash
-# IMAP Configuration (receiving email)
-IMAP_HOST=imap.gmail.com          # Server hostname
-IMAP_PORT=993                     # Server port
-IMAP_USER=your@email.com
-IMAP_PASS=your_password
-IMAP_TLS=true                     # Use TLS/SSL connection
-IMAP_REJECT_UNAUTHORIZED=true     # Set to false for self-signed certs
-IMAP_MAILBOX=INBOX                # Default mailbox
+cd imap-smtp-email && bash setup.sh
+```
 
-# SMTP Configuration (sending email)
-SMTP_HOST=smtp.gmail.com          # SMTP server hostname
-SMTP_PORT=587                     # SMTP port (587 for STARTTLS, 465 for SSL)
-SMTP_SECURE=false                 # true for SSL (465), false for STARTTLS (587)
-SMTP_USER=your@gmail.com          # Your email address
-SMTP_PASS=your_password           # Your password or app password
-SMTP_FROM=your@gmail.com          # Default sender email (optional)
-SMTP_REJECT_UNAUTHORIZED=true     # Set to false for self-signed certs
+Configuration is stored at `~/.config/imap-smtp-email/.env` (survives skill updates).
+
+You can add multiple accounts by running `setup.sh` again and choosing "Add a new account". Use `--account <name>` to switch between accounts:
+
+```bash
+node scripts/imap.js --account work check
+node scripts/smtp.js --account work send --to foo@bar.com --subject Hi --body Hello
 ```
 
 ## 🌐 Supported Email Providers
@@ -140,7 +134,7 @@ For complete documentation and all available commands, see [SKILL.md](./imap-smt
 
 ## 🔒 Security
 
-- Store credentials in `.env` file (add to `.gitignore`)
+- Configuration is stored at `~/.config/imap-smtp-email/.env` with `600` permissions (owner read/write only)
 - **Never commit your email credentials to version control**
 - Use app passwords when available (Gmail, 163.com, etc.)
 
