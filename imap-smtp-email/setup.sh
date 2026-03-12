@@ -261,8 +261,8 @@ EOF
     # Strip existing lines with this account prefix, then append new ones
     TEMP_FILE=$(mktemp)
     grep -v "^${ACCOUNT_PREFIX}\(IMAP_\|SMTP_\)" "$CONFIG_FILE" | grep -vi "^# ${ACCOUNT_NAME} account" > "$TEMP_FILE" 2>/dev/null || true
-    # Remove trailing blank lines
-    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$TEMP_FILE"
+    # Remove trailing blank lines (portable: command substitution strips trailing newlines)
+    content=$(cat "$TEMP_FILE") && printf '%s\n' "$content" > "$TEMP_FILE"
     echo "" >> "$TEMP_FILE"
     echo "$ACCOUNT_VARS" >> "$TEMP_FILE"
     mv "$TEMP_FILE" "$CONFIG_FILE"
