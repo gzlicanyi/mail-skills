@@ -190,6 +190,16 @@ List all available mailboxes/folders.
 node scripts/imap.js [--account <name>] list-mailboxes
 ```
 
+### list-accounts
+List all configured email accounts.
+
+```bash
+node scripts/imap.js list-accounts
+node scripts/smtp.js list-accounts
+```
+
+Shows account name, email address, server addresses, and configuration status.
+
 ## SMTP Commands (Sending Email)
 
 ### send
