@@ -64,6 +64,65 @@ function buildConfig(env, prefix) {
   };
 }
 
+// List all configured accounts from .env file
+// Returns { accounts: Array, configPath: String|null }
+function listAccounts() {
+  const envPath = findEnvPath();
+  if (!envPath) {
+    return { accounts: [], configPath: null };
+  }
+
+  // Parse the env file fresh to get all account prefixes
+  const dotenvResult = dotenv.config({ path: envPath });
+  const env = dotenvResult.parsed || {};
+  const accounts = [];
+  const seen = new Set();
+
+  // Check for default account (no prefix)
+  if (env.IMAP_HOST) {
+    accounts.push(createAccountObject(env, '', 'default'));
+    seen.add('default');
+  }
+
+  // Scan for named accounts (pattern: XXX_IMAP_HOST)
+  for (const key of Object.keys(env)) {
+    const match = key.match(/^([A-Z0-9]+)_IMAP_HOST$/);
+    if (match) {
+      const prefix = match[1];
+      const name = prefix.toLowerCase();
+      if (!seen.has(name)) {
+        accounts.push(createAccountObject(env, prefix + '_', name));
+        seen.add(name);
+      }
+    }
+  }
+
+  return { accounts, configPath: envPath };
+}
+
+// Create an account object from env variables
+function createAccountObject(env, prefix, name) {
+  const p = prefix;
+  return {
+    name,
+    email: env[`${p}IMAP_USER`] || env[`${p}SMTP_FROM`] || '-',
+    imapHost: env[`${p}IMAP_HOST`] || '-',
+    smtpHost: env[`${p}SMTP_HOST`] || '-',
+    isComplete: isAccountComplete(env, prefix)
+  };
+}
+
+// Check if an account has all required configuration
+function isAccountComplete(env, prefix) {
+  const p = prefix;
+  return !!(
+    env[`${p}IMAP_HOST`] &&
+    env[`${p}IMAP_USER`] &&
+    env[`${p}IMAP_PASS`] &&
+    env[`${p}SMTP_HOST`]
+  );
+}
+
 // --- Module initialization ---
 const envPath = findEnvPath();
 if (envPath) {
@@ -79,3 +138,4 @@ process.argv = [process.argv[0], process.argv[1], ...remainingArgs];
 const config = buildConfig(process.env, prefix);
 
 module.exports = config;
+module.exports.listAccounts = listAccounts;
