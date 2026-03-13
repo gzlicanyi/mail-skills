@@ -101,6 +101,11 @@ node scripts/smtp.js --account work send --to foo@bar.com --subject Hi --body He
 node scripts/imap.js check [--limit 10] [--mailbox INBOX] [--recent 2h]
 ```
 
+### List Configured Accounts
+```bash
+node scripts/imap.js list-accounts
+```
+
 ### Search Emails
 ```bash
 # Search unread emails from specific sender
