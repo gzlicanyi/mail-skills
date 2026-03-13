@@ -1,7 +1,7 @@
 # List Configured Email Accounts - Design Spec
 
 **Date:** 2026-03-13
-**Status:** Draft
+**Status:** Ready
 **Author:** Claude
 
 ## Overview
