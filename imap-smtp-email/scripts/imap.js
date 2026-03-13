@@ -518,6 +518,55 @@ function formatMailboxTree(boxes, prefix = '') {
   return result;
 }
 
+// Display accounts in a formatted table
+function displayAccounts(accounts, configPath) {
+  // Handle no config file case
+  if (!configPath) {
+    console.error('No configuration file found.');
+    console.error('Run "bash setup.sh" to configure your email account.');
+    process.exit(1);
+  }
+
+  // Handle no accounts case
+  if (accounts.length === 0) {
+    console.error(`No accounts configured in ${configPath}`);
+    process.exit(0);
+  }
+
+  // Display header with config path
+  console.log(`Configured accounts (from ${configPath}):\n`);
+
+  // Calculate column widths
+  const maxNameLen = Math.max(7, ...accounts.map(a => a.name.length)); // 7 = 'Account'.length
+  const maxEmailLen = Math.max(5, ...accounts.map(a => a.email.length)); // 5 = 'Email'.length
+  const maxImapLen = Math.max(4, ...accounts.map(a => a.imapHost.length)); // 4 = 'IMAP'.length
+  const maxSmtpLen = Math.max(4, ...accounts.map(a => a.smtpHost.length)); // 4 = 'SMTP'.length
+
+  // Table header
+  const header = `  ${padRight('Account', maxNameLen)}  ${padRight('Email', maxEmailLen)}  ${padRight('IMAP', maxImapLen)}  ${padRight('SMTP', maxSmtpLen)}  Status`;
+  console.log(header);
+
+  // Separator line
+  const separator = '  ' + '─'.repeat(maxNameLen) + '  ' + '─'.repeat(maxEmailLen) + '  ' + '─'.repeat(maxImapLen) + '  ' + '─'.repeat(maxSmtpLen) + '  ' + '────────────────';
+  console.log(separator);
+
+  // Table rows
+  for (const account of accounts) {
+    const statusIcon = account.isComplete ? '✓' : '⚠';
+    const statusText = account.isComplete ? 'Complete' : 'Incomplete';
+    const row = `  ${padRight(account.name, maxNameLen)}  ${padRight(account.email, maxEmailLen)}  ${padRight(account.imapHost, maxImapLen)}  ${padRight(account.smtpHost, maxSmtpLen)}  ${statusIcon} ${statusText}`;
+    console.log(row);
+  }
+
+  // Footer
+  console.log(`\n  ${accounts.length} account${accounts.length > 1 ? 's' : ''} total`);
+}
+
+// Helper: right-pad a string to a fixed width
+function padRight(str, len) {
+  return (str + ' '.repeat(len)).slice(0, len);
+}
+
 // Main CLI handler
 async function main() {
   const { command, options, positional } = parseArgs();
@@ -571,9 +620,17 @@ async function main() {
         result = await listMailboxes();
         break;
 
+      case 'list-accounts':
+        {
+          const { listAccounts } = require('./config');
+          const { accounts, configPath } = listAccounts();
+          displayAccounts(accounts, configPath);
+        }
+        return;  // Exit early, no JSON output
+
       default:
         console.error('Unknown command:', command);
-        console.error('Available commands: check, fetch, download, search, mark-read, mark-unread, list-mailboxes');
+        console.error('Available commands: check, fetch, download, search, mark-read, mark-unread, list-mailboxes, list-accounts');
         process.exit(1);
     }
 
