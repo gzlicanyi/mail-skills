@@ -160,6 +160,7 @@ Configured accounts (from /home/user/.config/imap-smtp-email/.env):
 | `scripts/config.js` | Add `listAccounts()`, `createAccountObject()`, `isAccountComplete()` |
 | `scripts/imap.js` | Add `list-accounts` command handler |
 | `scripts/smtp.js` | Add `list-accounts` command handler |
+| `SKILL.md` | Add `list-accounts` command documentation |
 
 ## Testing
 
