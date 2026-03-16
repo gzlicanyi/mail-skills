@@ -10,7 +10,7 @@ const nodemailer = require('nodemailer');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+const config = require('./config');
 
 function validateReadPath(inputPath) {
   let realPath;
@@ -20,13 +20,12 @@ function validateReadPath(inputPath) {
     realPath = path.resolve(inputPath);
   }
 
-  const allowedDirsStr = process.env.ALLOWED_READ_DIRS;
-  if (!allowedDirsStr) {
+  if (!config.allowedReadDirs.length) {
     throw new Error('ALLOWED_READ_DIRS not set in .env. File read operations are disabled.');
   }
 
-  const allowedDirs = allowedDirsStr.split(',').map(d =>
-    path.resolve(d.trim().replace(/^~/, os.homedir()))
+  const allowedDirs = config.allowedReadDirs.map(d =>
+    path.resolve(d.replace(/^~/, os.homedir()))
   );
 
   const allowed = allowedDirs.some(dir =>
@@ -64,24 +63,22 @@ function parseArgs() {
 
 // Create SMTP transporter
 function createTransporter() {
-  const config = {
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    tls: {
-      rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false',
-    },
-  };
-
-  if (!config.host || !config.auth.user || !config.auth.pass) {
-    throw new Error('Missing SMTP configuration. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS in .env');
+  if (!config.smtp.host || !config.smtp.user || !config.smtp.pass) {
+    throw new Error('Missing SMTP configuration. Check your config at ~/.config/imap-smtp-email/.env');
   }
 
-  return nodemailer.createTransport(config);
+  return nodemailer.createTransport({
+    host: config.smtp.host,
+    port: config.smtp.port,
+    secure: config.smtp.secure,
+    auth: {
+      user: config.smtp.user,
+      pass: config.smtp.pass,
+    },
+    tls: {
+      rejectUnauthorized: config.smtp.rejectUnauthorized,
+    },
+  });
 }
 
 // Send email
@@ -97,7 +94,7 @@ async function sendEmail(options) {
   }
 
   const mailOptions = {
-    from: options.from || process.env.SMTP_FROM || process.env.SMTP_USER,
+    from: options.from || config.smtp.from,
     to: options.to,
     cc: options.cc || undefined,
     bcc: options.bcc || undefined,
@@ -152,8 +149,8 @@ async function testConnection() {
   try {
     await transporter.verify();
     const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: process.env.SMTP_USER, // Send to self
+      from: config.smtp.from || config.smtp.user,
+      to: config.smtp.user,
       subject: 'SMTP Connection Test',
       text: 'This is a test email from the IMAP/SMTP email skill.',
       html: '<p>This is a <strong>test email</strong> from the IMAP/SMTP email skill.</p>',
@@ -167,6 +164,55 @@ async function testConnection() {
   } catch (err) {
     throw new Error(`SMTP test failed: ${err.message}`);
   }
+}
+
+// Display accounts in a formatted table
+function displayAccounts(accounts, configPath) {
+  // Handle no config file case
+  if (!configPath) {
+    console.error('No configuration file found.');
+    console.error('Run "bash setup.sh" to configure your email account.');
+    process.exit(1);
+  }
+
+  // Handle no accounts case
+  if (accounts.length === 0) {
+    console.error(`No accounts configured in ${configPath}`);
+    process.exit(0);
+  }
+
+  // Display header with config path
+  console.log(`Configured accounts (from ${configPath}):\n`);
+
+  // Calculate column widths
+  const maxNameLen = Math.max(7, ...accounts.map(a => a.name.length)); // 7 = 'Account'.length
+  const maxEmailLen = Math.max(5, ...accounts.map(a => a.email.length)); // 5 = 'Email'.length
+  const maxImapLen = Math.max(4, ...accounts.map(a => a.imapHost.length)); // 4 = 'IMAP'.length
+  const maxSmtpLen = Math.max(4, ...accounts.map(a => a.smtpHost.length)); // 4 = 'SMTP'.length
+
+  // Table header
+  const header = `  ${padRight('Account', maxNameLen)}  ${padRight('Email', maxEmailLen)}  ${padRight('IMAP', maxImapLen)}  ${padRight('SMTP', maxSmtpLen)}  Status`;
+  console.log(header);
+
+  // Separator line
+  const separator = '  ' + '─'.repeat(maxNameLen) + '  ' + '─'.repeat(maxEmailLen) + '  ' + '─'.repeat(maxImapLen) + '  ' + '─'.repeat(maxSmtpLen) + '  ' + '────────────────';
+  console.log(separator);
+
+  // Table rows
+  for (const account of accounts) {
+    const statusIcon = account.isComplete ? '✓' : '⚠';
+    const statusText = account.isComplete ? 'Complete' : 'Incomplete';
+    const row = `  ${padRight(account.name, maxNameLen)}  ${padRight(account.email, maxEmailLen)}  ${padRight(account.imapHost, maxImapLen)}  ${padRight(account.smtpHost, maxSmtpLen)}  ${statusIcon} ${statusText}`;
+    console.log(row);
+  }
+
+  // Footer
+  console.log(`\n  ${accounts.length} account${accounts.length > 1 ? 's' : ''} total`);
+}
+
+// Helper: right-pad a string to a fixed width
+function padRight(str, len) {
+  return (str + ' '.repeat(len)).slice(0, len);
 }
 
 // Main CLI handler
@@ -214,9 +260,17 @@ async function main() {
         result = await testConnection();
         break;
 
+      case 'list-accounts':
+        {
+          const { listAccounts } = require('./config');
+          const { accounts, configPath } = listAccounts();
+          displayAccounts(accounts, configPath);
+        }
+        return;  // Exit early, no JSON output
+
       default:
         console.error('Unknown command:', command);
-        console.error('Available commands: send, test');
+        console.error('Available commands: send, test, list-accounts');
         console.error('\nUsage:');
         console.error('  send   --to <email> --subject <text> [--body <text>] [--html] [--cc <email>] [--bcc <email>] [--attach <file>]');
         console.error('  send   --to <email> --subject <text> --body-file <file> [--html-file <file>] [--attach <file>]');
