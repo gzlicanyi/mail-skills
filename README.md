@@ -80,6 +80,7 @@ node scripts/smtp.js --account work send --to foo@bar.com --subject Hi --body He
 | Gmail | imap.gmail.com | 993 | smtp.gmail.com | 587 |
 | Outlook | outlook.office365.com | 993 | smtp.office365.com | 587 |
 | QQ Mail | imap.qq.com | 993 | smtp.qq.com | 587 |
+| exmail.qq.com | imap.exmail.qq.com | 993 | smtp.exmail.qq.com | 465 |
 
 ### Important Notes
 

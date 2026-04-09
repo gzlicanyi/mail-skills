@@ -72,9 +72,10 @@ echo "  7) 188.com"
 echo "  8) vip.188.com"
 echo "  9) yeah.net"
 echo " 10) QQ Mail"
-echo " 11) Custom"
+echo " 11) exmail.qq.com"
+echo " 12) Custom"
 echo ""
-read -p "Enter choice (1-11): " PROVIDER_CHOICE
+read -p "Enter choice (1-12): " PROVIDER_CHOICE
 
 case $PROVIDER_CHOICE in
   1)
@@ -164,6 +165,14 @@ case $PROVIDER_CHOICE in
     IMAP_TLS="true"
     ;;
   11)
+    IMAP_HOST="imap.exmail.qq.com"
+    IMAP_PORT="993"
+    SMTP_HOST="smtp.exmail.qq.com"
+    SMTP_PORT="465"
+    SMTP_SECURE="true"
+    IMAP_TLS="true"
+    ;;
+  12)
     read -p "IMAP Host: " IMAP_HOST
     read -p "IMAP Port: " IMAP_PORT
     read -p "SMTP Host: " SMTP_HOST
