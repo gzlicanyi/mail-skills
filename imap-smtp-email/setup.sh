@@ -10,6 +10,14 @@ echo "  IMAP/SMTP Email Skill Setup"
 echo "================================"
 echo ""
 
+# Install Node.js dependencies
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ ! -d "$SKILL_DIR/node_modules" ]; then
+  echo "Installing dependencies..."
+  (cd "$SKILL_DIR" && npm install --production)
+  echo ""
+fi
+
 # Determine setup mode
 SETUP_MODE="default"
 ACCOUNT_PREFIX=""
