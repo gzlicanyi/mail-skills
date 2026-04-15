@@ -113,6 +113,7 @@ Without `--account`, the default (unprefixed) account is used.
 | Gmail | imap.gmail.com | 993 | smtp.gmail.com | 587 |
 | Outlook | outlook.office365.com | 993 | smtp.office365.com | 587 |
 | QQ Mail | imap.qq.com | 993 | smtp.qq.com | 587 |
+| exmail.qq.com | imap.exmail.qq.com | 993 | smtp.exmail.qq.com | 465 |
 
 **Important for Gmail:**
 - Gmail does **not** accept your regular account password
