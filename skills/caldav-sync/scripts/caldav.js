@@ -3,7 +3,7 @@
 const { createDAVClient, DAVClient, fetchCalendars } = require('tsdav');
 const { randomUUID } = require('crypto');
 const config = require('./config');
-const { parseEvent, generateEvent, parseTodo, generateTodo } = require('./ical');
+const { parseEvent, generateEvent, parseTodo, generateTodo, parseFreebusy } = require('./ical');
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -89,6 +89,49 @@ function inferHomeUrl(serverUrl, username) {
 
 function needsNativeFetch() {
   return !!(inferPrincipalUrl(config.serverUrl, config.username));
+}
+
+const _vtodoSupportCache = new Map();
+
+async function hasVtodoSupport(calendar) {
+  const components = calendar.supportedCalendarComponentSet;
+  if (components) {
+    return components.some((c) => (typeof c === 'string' ? c.toUpperCase() : '') === 'VTODO');
+  }
+
+  if (_vtodoSupportCache.has(calendar.url)) {
+    return _vtodoSupportCache.get(calendar.url);
+  }
+
+  try {
+    const encoded = Buffer.from(`${config.username}:${config.password}`).toString('base64');
+    const resp = await fetch(calendar.url, {
+      method: 'PROPFIND',
+      headers: {
+        Authorization: `Basic ${encoded}`,
+        'Content-Type': 'application/xml; charset=utf-8',
+        Depth: '0',
+      },
+      body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><prop><C:supported-calendar-component-set/></prop></propfind>',
+    });
+
+    const text = await resp.text();
+    const supported = !text.includes('VEVENT') || text.includes('VTODO');
+    _vtodoSupportCache.set(calendar.url, supported);
+    return supported;
+  } catch {
+    _vtodoSupportCache.set(calendar.url, true);
+    return true;
+  }
+}
+
+async function requireVtodoCalendar(client, calendarId) {
+  const calendar = await resolveCalendar(client, calendarId);
+  if (!(await hasVtodoSupport(calendar))) {
+    throw new Error(`Calendar "${calendar.displayName || calendar.url}" does not support VTODO. ` +
+      `Todo operations require a calendar that supports VTODO.`);
+  }
+  return calendar;
 }
 
 function authHeaders() {
@@ -274,10 +317,19 @@ async function listTodos(options) {
     ? calendars.filter((c) => c.url === options.calendar || c.displayName === options.calendar)
     : calendars;
 
+  const vtodoCalendars = [];
+  for (const cal of targetCalendars) {
+    if (await hasVtodoSupport(cal)) vtodoCalendars.push(cal);
+  }
+  if (targetCalendars.length > 0 && vtodoCalendars.length === 0) {
+    const names = targetCalendars.map((c) => c.displayName || c.url).join(', ');
+    throw new Error(`None of the selected calendars support VTODO: ${names}`);
+  }
+
   const allTodos = [];
   const statusFilter = options.status || 'all';
 
-  for (const calendar of targetCalendars) {
+  for (const calendar of vtodoCalendars) {
     let objects;
     if (needsNativeFetch()) {
       objects = await fetchObjectsViaPropfind(calendar.url);
@@ -336,7 +388,7 @@ async function fetchObjectsViaPropfind(calendarUrl) {
 
 async function createTodo(options) {
   const client = await createClient();
-  const calendar = await resolveCalendar(client, options.calendar);
+  const calendar = await requireVtodoCalendar(client, options.calendar);
 
   const uid = randomUUID();
   const todoObj = {
@@ -382,8 +434,15 @@ async function findTodoByUid(calendars, uid) {
 async function updateTodo(options) {
   const client = await createClient();
   const calendars = await client.fetchCalendars();
+  const vtodoCalendars = [];
+  for (const cal of calendars) {
+    if (await hasVtodoSupport(cal)) vtodoCalendars.push(cal);
+  }
+  if (vtodoCalendars.length === 0) {
+    throw new Error('No calendar with VTODO support available');
+  }
 
-  const found = await findTodoByUid(calendars, options.uid);
+  const found = await findTodoByUid(vtodoCalendars, options.uid);
   if (!found) throw new Error(`Todo not found: ${options.uid}`);
 
   const existing = parseTodo(found.data, found.calendarName);
@@ -412,8 +471,15 @@ async function updateTodo(options) {
 async function deleteTodo(options) {
   const client = await createClient();
   const calendars = await client.fetchCalendars();
+  const vtodoCalendars = [];
+  for (const cal of calendars) {
+    if (await hasVtodoSupport(cal)) vtodoCalendars.push(cal);
+  }
+  if (vtodoCalendars.length === 0) {
+    throw new Error('No calendar with VTODO support available');
+  }
 
-  const found = await findTodoByUid(calendars, options.uid);
+  const found = await findTodoByUid(vtodoCalendars, options.uid);
   if (!found) throw new Error(`Todo not found: ${options.uid}`);
 
   if (needsNativeFetch()) {
@@ -429,7 +495,41 @@ async function freebusy(options) {
   const client = await createClient();
   const calendar = await resolveCalendar(client, options.calendar);
 
-  const result = await client.freeBusyQuery({
+  // Try CalDAV free-busy-query REPORT
+  const startUtc = new Date(options.start).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const endUtc = new Date(options.end).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+  const reportBody = `<?xml version="1.0" encoding="utf-8"?>
+<C:free-busy-query xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <C:time-range start="${startUtc}" end="${endUtc}"/>
+</C:free-busy-query>`;
+
+  try {
+    const resp = await fetch(calendar.url, {
+      method: 'REPORT',
+      headers: {
+        ...authHeaders(),
+        Depth: '0',
+      },
+      body: reportBody,
+    });
+
+    if (resp.ok) {
+      const text = await resp.text();
+      let iCalData = text;
+      const calDataMatch = text.match(/<[^>]*calendar-data[^>]*>([\s\S]*?)<\/[^>]*calendar-data>/);
+      if (calDataMatch) {
+        iCalData = calDataMatch[1].trim();
+      }
+      const periods = parseFreebusy(iCalData);
+      if (periods.length > 0) return { busy: periods };
+    }
+  } catch {
+    // REPORT not supported, fall through to event-based approach
+  }
+
+  // Fallback: derive busy times from events in the time range
+  const objects = await client.fetchCalendarObjects({
     calendar,
     timeRange: {
       start: options.start,
@@ -437,13 +537,15 @@ async function freebusy(options) {
     },
   });
 
-  return {
-    busy: (result || []).map((period) => ({
-      start: period.start,
-      end: period.end,
-      type: period.type || 'BUSY',
-    })),
-  };
+  const busy = objects
+    .map((obj) => {
+      const event = parseEvent(obj.data, calendar.displayName);
+      if (!event) return null;
+      return { start: event.start, end: event.end, type: 'BUSY' };
+    })
+    .filter(Boolean);
+
+  return { busy };
 }
 
 function displayAccounts(accounts, configPath) {

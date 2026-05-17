@@ -111,4 +111,26 @@ function generateTodo(todoObj) {
   return vcalendar.toString();
 }
 
-module.exports = { parseEvent, generateEvent, parseTodo, generateTodo };
+function parseFreebusy(iCalString) {
+  const jcal = ICAL.parse(iCalString);
+  const vcalendar = new ICAL.Component(jcal);
+  const vfreebusy = vcalendar.getFirstSubcomponent('vfreebusy');
+  if (!vfreebusy) return [];
+
+  const periods = [];
+  for (const prop of vfreebusy.getAllProperties('freebusy')) {
+    const type = prop.getParameter('fbtype') || 'BUSY';
+    for (const val of (prop.getValues() || [])) {
+      if (val && val.start && val.end) {
+        periods.push({
+          start: val.start.toJSDate().toISOString(),
+          end: val.end.toJSDate().toISOString(),
+          type,
+        });
+      }
+    }
+  }
+  return periods;
+}
+
+module.exports = { parseEvent, generateEvent, parseTodo, generateTodo, parseFreebusy };

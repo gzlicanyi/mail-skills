@@ -1,6 +1,6 @@
 ---
 name: caldav-sync
-description: 日历与待办管理，支持 CalDAV 协议。查询/创建/编辑/删除日历事件和待办，空闲查询，多账号支持。
+description: Calendar and task management via CalDAV protocol. Query, create, edit, and delete calendar events and todos. Free/busy query, multi-account support.
 metadata:
   openclaw:
     emoji: "📅"
