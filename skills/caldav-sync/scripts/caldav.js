@@ -57,6 +57,134 @@ async function listCalendars() {
   };
 }
 
+async function resolveCalendar(client, calendarId) {
+  if (calendarId) {
+    const calendars = await client.fetchCalendars();
+    const found = calendars.find((c) => c.url === calendarId || c.displayName === calendarId);
+    if (!found) throw new Error(`Calendar not found: ${calendarId}`);
+    return found;
+  }
+
+  const calendars = await client.fetchCalendars();
+  if (config.defaultCalendar) {
+    const found = calendars.find(
+      (c) => c.url === config.defaultCalendar || c.displayName === config.defaultCalendar
+    );
+    if (found) return found;
+  }
+  return calendars[0];
+}
+
+async function listEvents(options) {
+  const client = await createClient();
+  const calendar = await resolveCalendar(client, options.calendar);
+
+  const timeRange = {
+    start: options.start,
+    end: options.end,
+  };
+
+  const objects = await client.fetchCalendarObjects({
+    calendar,
+    timeRange,
+  });
+
+  return {
+    events: objects
+      .map((obj) => parseEvent(obj.data, calendar.displayName))
+      .filter(Boolean),
+  };
+}
+
+async function getEvent(options) {
+  const client = await createClient();
+  const calendar = await resolveCalendar(client, options.calendar);
+
+  const objects = await client.fetchCalendarObjects({ calendar });
+
+  const found = objects.find((obj) => {
+    const event = parseEvent(obj.data, calendar.displayName);
+    return event && event.uid === options.uid;
+  });
+
+  if (!found) throw new Error(`Event not found: ${options.uid}`);
+
+  return { event: parseEvent(found.data, calendar.displayName) };
+}
+
+async function createEvent(options) {
+  const client = await createClient();
+  const calendar = await resolveCalendar(client, options.calendar);
+
+  const eventObj = {
+    summary: options.summary,
+    start: options.start,
+    end: options.end,
+    description: options.description || '',
+    location: options.location || '',
+  };
+
+  const iCalString = generateEvent(eventObj);
+
+  const result = await client.createCalendarObject({
+    calendar,
+    iCalString,
+    filename: `${eventObj.uid || Date.now()}.ics`,
+  });
+
+  return { success: true, uid: eventObj.uid, url: result?.url };
+}
+
+async function updateEvent(options) {
+  const client = await createClient();
+  const calendar = await resolveCalendar(client, options.calendar);
+
+  const objects = await client.fetchCalendarObjects({ calendar });
+
+  const found = objects.find((obj) => {
+    const event = parseEvent(obj.data, calendar.displayName);
+    return event && event.uid === options.uid;
+  });
+
+  if (!found) throw new Error(`Event not found: ${options.uid}`);
+
+  const existing = parseEvent(found.data, calendar.displayName);
+
+  const updatedObj = {
+    uid: existing.uid,
+    summary: options.summary || existing.summary,
+    start: options.start || existing.start,
+    end: options.end || existing.end,
+    description: options.description !== undefined ? options.description : existing.description,
+    location: options.location !== undefined ? options.location : existing.location,
+  };
+
+  const iCalString = generateEvent(updatedObj);
+  found.data = iCalString;
+
+  await client.updateCalendarObject({ calendarObject: found });
+
+  return { success: true, uid: existing.uid };
+}
+
+async function deleteEvent(options) {
+  const client = await createClient();
+  const calendar = await resolveCalendar(client, options.calendar);
+
+  const objects = await client.fetchCalendarObjects({ calendar });
+
+  const found = objects.find((obj) => {
+    const event = parseEvent(obj.data, calendar.displayName);
+    return event && event.uid === options.uid;
+  });
+
+  if (!found) throw new Error(`Event not found: ${options.uid}`);
+
+  await client.deleteCalendarObject({ calendarObject: found });
+
+  return { success: true, uid: options.uid };
+}
+
 function displayAccounts(accounts, configPath) {
   if (!configPath) {
     console.error('No configuration file found.');
@@ -113,6 +241,41 @@ async function main() {
         displayAccounts(accounts, configPath);
         return;
       }
+
+      case 'list-events':
+        if (!options.start || !options.end) {
+          throw new Error('Missing required options: --start <date> --end <date>');
+        }
+        result = await listEvents(options);
+        break;
+
+      case 'get-event':
+        if (!options.uid) {
+          throw new Error('Missing required option: --uid <uid>');
+        }
+        result = await getEvent(options);
+        break;
+
+      case 'create-event':
+        if (!options.summary || !options.start || !options.end) {
+          throw new Error('Missing required options: --summary <text> --start <datetime> --end <datetime>');
+        }
+        result = await createEvent(options);
+        break;
+
+      case 'update-event':
+        if (!options.uid) {
+          throw new Error('Missing required option: --uid <uid>');
+        }
+        result = await updateEvent(options);
+        break;
+
+      case 'delete-event':
+        if (!options.uid) {
+          throw new Error('Missing required option: --uid <uid>');
+        }
+        result = await deleteEvent(options);
+        break;
 
       default:
         console.error('Unknown command:', command);
