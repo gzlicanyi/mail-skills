@@ -1,0 +1,25 @@
+{
+  "name": "caldav-sync-skill",
+  "version": "1.0.0",
+  "description": "CalDAV calendar and todo management tool. Supports events and tasks via CalDAV protocol with multi-account support.",
+  "main": "scripts/caldav.js",
+  "scripts": {
+    "list-calendars": "node scripts/caldav.js list-calendars",
+    "list-events": "node scripts/caldav.js list-events",
+    "list-todos": "node scripts/caldav.js list-todos"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "ical.js": "^1.5.0",
+    "tsdav": "^2.1.8"
+  },
+  "keywords": [
+    "caldav",
+    "calendar",
+    "todo",
+    "icalendar",
+    "skill"
+  ],
+  "author": "NetEase",
+  "license": "MIT"
+}
