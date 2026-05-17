@@ -52,3 +52,4 @@ credentials.json
 /.claude/
 /**/node_modules/
 /**/package-lock.json
+docs/superpowers/
