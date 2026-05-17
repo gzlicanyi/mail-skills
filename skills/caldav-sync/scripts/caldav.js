@@ -278,7 +278,13 @@ async function listTodos(options) {
   const statusFilter = options.status || 'all';
 
   for (const calendar of targetCalendars) {
-    const objects = await client.fetchCalendarObjects({ calendar });
+    let objects;
+    if (needsNativeFetch()) {
+      objects = await fetchObjectsViaPropfind(calendar.url);
+    } else {
+      objects = await client.fetchCalendarObjects({ calendar });
+    }
+
     for (const obj of objects) {
       const todo = parseTodo(obj.data, calendar.displayName);
       if (!todo) continue;
@@ -291,6 +297,41 @@ async function listTodos(options) {
   }
 
   return { todos: allTodos };
+}
+
+async function fetchObjectsViaPropfind(calendarUrl) {
+  const resp = await fetch(calendarUrl, {
+    method: 'PROPFIND',
+    headers: {
+      ...authHeaders(),
+      Depth: '1',
+    },
+    body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><prop><C:calendar-data/><D:getetag xmlns:D="DAV:"/></prop></propfind>',
+  });
+  if (!resp.ok && resp.status !== 207) return [];
+
+  const text = await resp.text();
+  const results = [];
+
+  // Split by <response> blocks to correctly associate href/data/etag
+  const responseBlocks = text.split(/<\/[^>]*response>/i);
+  for (const block of responseBlocks) {
+    const hrefMatch = block.match(/<[^>]*href[^>]*>(.*?)<\/[^>]*href>/i);
+    const dataMatch = block.match(/<[^>]*calendar-data[^>]*><!\[CDATA\[(.*?)\]\]><\/[^>]*calendar-data>/is);
+    const etagMatch = block.match(/<[^>]*getetag[^>]*>(.*?)<\/[^>]*getetag>/i);
+
+    if (!dataMatch) continue;
+
+    const href = hrefMatch ? hrefMatch[1] : '';
+    const fullUrl = href.startsWith('http') ? href : new URL(href, calendarUrl).href;
+    results.push({
+      url: fullUrl,
+      data: dataMatch[1],
+      etag: etagMatch ? etagMatch[1] : null,
+    });
+  }
+
+  return results;
 }
 
 async function createTodo(options) {
@@ -320,29 +361,32 @@ async function createTodo(options) {
   return { success: true, uid, url };
 }
 
+async function findTodoByUid(calendars, uid) {
+  for (const calendar of calendars) {
+    let objects;
+    if (needsNativeFetch()) {
+      objects = await fetchObjectsViaPropfind(calendar.url);
+    } else {
+      objects = await (await createClient()).fetchCalendarObjects({ calendar });
+    }
+    for (const obj of objects) {
+      const todo = parseTodo(obj.data, calendar.displayName);
+      if (todo && todo.uid === uid) {
+        return { ...obj, calendarName: calendar.displayName };
+      }
+    }
+  }
+  return null;
+}
+
 async function updateTodo(options) {
   const client = await createClient();
   const calendars = await client.fetchCalendars();
 
-  let found = null;
-  let foundCalendar = null;
-
-  for (const calendar of calendars) {
-    const objects = await client.fetchCalendarObjects({ calendar });
-    for (const obj of objects) {
-      const todo = parseTodo(obj.data, calendar.displayName);
-      if (todo && todo.uid === options.uid) {
-        found = obj;
-        foundCalendar = calendar;
-        break;
-      }
-    }
-    if (found) break;
-  }
-
+  const found = await findTodoByUid(calendars, options.uid);
   if (!found) throw new Error(`Todo not found: ${options.uid}`);
 
-  const existing = parseTodo(found.data, foundCalendar.displayName);
+  const existing = parseTodo(found.data, found.calendarName);
 
   const updatedObj = {
     uid: existing.uid,
@@ -369,20 +413,7 @@ async function deleteTodo(options) {
   const client = await createClient();
   const calendars = await client.fetchCalendars();
 
-  let found = null;
-
-  for (const calendar of calendars) {
-    const objects = await client.fetchCalendarObjects({ calendar });
-    for (const obj of objects) {
-      const todo = parseTodo(obj.data, calendar.displayName);
-      if (todo && todo.uid === options.uid) {
-        found = obj;
-        break;
-      }
-    }
-    if (found) break;
-  }
-
+  const found = await findTodoByUid(calendars, options.uid);
   if (!found) throw new Error(`Todo not found: ${options.uid}`);
 
   if (needsNativeFetch()) {
