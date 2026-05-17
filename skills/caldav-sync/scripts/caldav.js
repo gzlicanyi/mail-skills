@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-const { createDAVClient } = require('tsdav');
+const { createDAVClient, DAVClient, fetchCalendars } = require('tsdav');
+const { randomUUID } = require('crypto');
 const config = require('./config');
 const { parseEvent, generateEvent, parseTodo, generateTodo } = require('./ical');
 
@@ -30,7 +31,7 @@ async function createClient() {
     throw new Error('Missing CalDAV configuration. Run "bash setup.sh" to configure.');
   }
 
-  const client = await createDAVClient({
+  const clientParams = {
     serverUrl: config.serverUrl,
     credentials: {
       username: config.username,
@@ -38,9 +39,78 @@ async function createClient() {
     },
     authMethod: 'Basic',
     defaultAccountType: 'caldav',
-  });
+  };
 
-  return client;
+  // If principalUrl/homeUrl provided in config, use direct DAVClient with manual account
+  const principalUrl = config.principalUrl || inferPrincipalUrl(config.serverUrl, config.username);
+  const homeUrl = config.homeUrl || inferHomeUrl(config.serverUrl, config.username);
+
+  if (principalUrl && homeUrl) {
+    const client = new DAVClient(clientParams);
+    // Skip login() — set auth headers and account directly for non-standard servers
+    client.authHeaders = getBasicAuthHeaders(clientParams.credentials);
+    client.account = {
+      serverUrl: config.serverUrl,
+      credentials: clientParams.credentials,
+      accountType: 'caldav',
+      principalUrl,
+      homeUrl,
+      rootUrl: homeUrl,
+      calendarHomeUrl: homeUrl,
+      calendars: [],
+    };
+    return client;
+  }
+
+  return await createDAVClient(clientParams);
+}
+
+function getBasicAuthHeaders(credentials) {
+  const encoded = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64');
+  return { Authorization: `Basic ${encoded}` };
+}
+
+function inferPrincipalUrl(serverUrl, username) {
+  const url = new URL(serverUrl);
+  // NetEase pattern: caldav.163.com -> /caldav/dav/<user>/user/
+  if (url.hostname === 'caldav.163.com' || url.hostname === 'caldav.qiye.163.com' || url.hostname === 'caldavhz.qiye.163.com') {
+    return `${url.origin}/caldav/dav/${username}/user/`;
+  }
+  return null;
+}
+
+function inferHomeUrl(serverUrl, username) {
+  const url = new URL(serverUrl);
+  if (url.hostname === 'caldav.163.com' || url.hostname === 'caldav.qiye.163.com' || url.hostname === 'caldavhz.qiye.163.com') {
+    return `${url.origin}/caldav/dav/${username}/calendar/`;
+  }
+  return null;
+}
+
+function needsNativeFetch() {
+  return !!(inferPrincipalUrl(config.serverUrl, config.username));
+}
+
+function authHeaders() {
+  const encoded = Buffer.from(`${config.username}:${config.password}`).toString('base64');
+  return { Authorization: `Basic ${encoded}`, 'Content-Type': 'text/calendar; charset=utf-8' };
+}
+
+async function davPut(url, body, etag) {
+  const headers = authHeaders();
+  if (etag) headers['If-Match'] = etag;
+  const resp = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body,
+  });
+  if (!resp.ok) throw new Error(`PUT ${url} failed: ${resp.status} ${resp.statusText}`);
+  return resp.headers.get('etag');
+}
+
+async function davDelete(url) {
+  const resp = await fetch(url, { method: 'DELETE', headers: authHeaders() });
+  if (!resp.ok && resp.status !== 404) throw new Error(`DELETE ${url} failed: ${resp.status} ${resp.statusText}`);
 }
 
 async function listCalendars() {
@@ -116,7 +186,9 @@ async function createEvent(options) {
   const client = await createClient();
   const calendar = await resolveCalendar(client, options.calendar);
 
+  const uid = randomUUID();
   const eventObj = {
+    uid,
     summary: options.summary,
     start: options.start,
     end: options.end,
@@ -125,14 +197,16 @@ async function createEvent(options) {
   };
 
   const iCalString = generateEvent(eventObj);
+  const filename = `${uid}.ics`;
+  const url = new URL(filename, calendar.url).href;
 
-  const result = await client.createCalendarObject({
-    calendar,
-    iCalString,
-    filename: `${eventObj.uid || Date.now()}.ics`,
-  });
+  if (needsNativeFetch()) {
+    await davPut(url, iCalString);
+  } else {
+    await client.createCalendarObject({ calendar, iCalString, filename });
+  }
 
-  return { success: true, uid: eventObj.uid, url: result?.url };
+  return { success: true, uid, url };
 }
 
 async function updateEvent(options) {
@@ -160,9 +234,13 @@ async function updateEvent(options) {
   };
 
   const iCalString = generateEvent(updatedObj);
-  found.data = iCalString;
 
-  await client.updateCalendarObject({ calendarObject: found });
+  if (needsNativeFetch()) {
+    await davPut(found.url, iCalString, found.etag);
+  } else {
+    found.data = iCalString;
+    await client.updateCalendarObject({ calendarObject: found });
+  }
 
   return { success: true, uid: existing.uid };
 }
@@ -180,7 +258,11 @@ async function deleteEvent(options) {
 
   if (!found) throw new Error(`Event not found: ${options.uid}`);
 
-  await client.deleteCalendarObject({ calendarObject: found });
+  if (needsNativeFetch()) {
+    await davDelete(found.url);
+  } else {
+    await client.deleteCalendarObject({ calendarObject: found });
+  }
 
   return { success: true, uid: options.uid };
 }
@@ -215,7 +297,9 @@ async function createTodo(options) {
   const client = await createClient();
   const calendar = await resolveCalendar(client, options.calendar);
 
+  const uid = randomUUID();
   const todoObj = {
+    uid,
     summary: options.summary,
     due: options.due || null,
     description: options.description || '',
@@ -224,14 +308,16 @@ async function createTodo(options) {
   };
 
   const iCalString = generateTodo(todoObj);
+  const filename = `${uid}.ics`;
+  const url = new URL(filename, calendar.url).href;
 
-  const result = await client.createCalendarObject({
-    calendar,
-    iCalString,
-    filename: `${todoObj.uid || Date.now()}.ics`,
-  });
+  if (needsNativeFetch()) {
+    await davPut(url, iCalString);
+  } else {
+    await client.createCalendarObject({ calendar, iCalString, filename });
+  }
 
-  return { success: true, uid: todoObj.uid, url: result?.url };
+  return { success: true, uid, url };
 }
 
 async function updateTodo(options) {
@@ -268,9 +354,13 @@ async function updateTodo(options) {
   };
 
   const iCalString = generateTodo(updatedObj);
-  found.data = iCalString;
 
-  await client.updateCalendarObject({ calendarObject: found });
+  if (needsNativeFetch()) {
+    await davPut(found.url, iCalString, found.etag);
+  } else {
+    found.data = iCalString;
+    await client.updateCalendarObject({ calendarObject: found });
+  }
 
   return { success: true, uid: existing.uid };
 }
@@ -295,7 +385,11 @@ async function deleteTodo(options) {
 
   if (!found) throw new Error(`Todo not found: ${options.uid}`);
 
-  await client.deleteCalendarObject({ calendarObject: found });
+  if (needsNativeFetch()) {
+    await davDelete(found.url);
+  } else {
+    await client.deleteCalendarObject({ calendarObject: found });
+  }
 
   return { success: true, uid: options.uid };
 }

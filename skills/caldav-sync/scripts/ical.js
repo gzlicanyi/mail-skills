@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const ICAL = require('ical.js');
+const { randomUUID } = require('crypto');
 
 function parseEvent(iCalString, calendarId) {
   const jcal = ICAL.parse(iCalString);
@@ -31,7 +32,7 @@ function generateEvent(eventObj) {
   vcalendar.updatePropertyWithValue('prodid', '-//caldav-sync-skill//EN');
 
   const vevent = new ICAL.Component('vevent');
-  vevent.updatePropertyWithValue('uid', eventObj.uid || ICAL.uuid());
+  vevent.updatePropertyWithValue('uid', eventObj.uid || randomUUID());
   vevent.updatePropertyWithValue('summary', eventObj.summary || '');
 
   const dtstart = ICAL.Time.fromJSDate(new Date(eventObj.start), true);
@@ -84,7 +85,7 @@ function generateTodo(todoObj) {
   vcalendar.updatePropertyWithValue('prodid', '-//caldav-sync-skill//EN');
 
   const vtodo = new ICAL.Component('vtodo');
-  vtodo.updatePropertyWithValue('uid', todoObj.uid || ICAL.uuid());
+  vtodo.updatePropertyWithValue('uid', todoObj.uid || randomUUID());
   vtodo.updatePropertyWithValue('summary', todoObj.summary || '');
 
   if (todoObj.due) {

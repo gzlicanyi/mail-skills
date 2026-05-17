@@ -38,6 +38,8 @@ function buildConfig(env, prefix) {
     username: env[`${p}CALDAV_USERNAME`],
     password: env[`${p}CALDAV_PASSWORD`],
     defaultCalendar: env[`${p}CALDAV_DEFAULT_CALENDAR`] || '',
+    principalUrl: env[`${p}CALDAV_PRINCIPAL_URL`] || '',
+    homeUrl: env[`${p}CALDAV_HOME_URL`] || '',
   };
 }
 
