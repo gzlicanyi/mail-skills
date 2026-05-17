@@ -185,6 +185,142 @@ async function deleteEvent(options) {
   return { success: true, uid: options.uid };
 }
 
+async function listTodos(options) {
+  const client = await createClient();
+  const calendars = await client.fetchCalendars();
+  const targetCalendars = options.calendar
+    ? calendars.filter((c) => c.url === options.calendar || c.displayName === options.calendar)
+    : calendars;
+
+  const allTodos = [];
+  const statusFilter = options.status || 'all';
+
+  for (const calendar of targetCalendars) {
+    const objects = await client.fetchCalendarObjects({ calendar });
+    for (const obj of objects) {
+      const todo = parseTodo(obj.data, calendar.displayName);
+      if (!todo) continue;
+
+      if (statusFilter === 'pending' && todo.status !== 'pending') continue;
+      if (statusFilter === 'completed' && todo.status !== 'completed') continue;
+
+      allTodos.push(todo);
+    }
+  }
+
+  return { todos: allTodos };
+}
+
+async function createTodo(options) {
+  const client = await createClient();
+  const calendar = await resolveCalendar(client, options.calendar);
+
+  const todoObj = {
+    summary: options.summary,
+    due: options.due || null,
+    description: options.description || '',
+    priority: options.priority ? parseInt(options.priority) : 0,
+    status: 'pending',
+  };
+
+  const iCalString = generateTodo(todoObj);
+
+  const result = await client.createCalendarObject({
+    calendar,
+    iCalString,
+    filename: `${todoObj.uid || Date.now()}.ics`,
+  });
+
+  return { success: true, uid: todoObj.uid, url: result?.url };
+}
+
+async function updateTodo(options) {
+  const client = await createClient();
+  const calendars = await client.fetchCalendars();
+
+  let found = null;
+  let foundCalendar = null;
+
+  for (const calendar of calendars) {
+    const objects = await client.fetchCalendarObjects({ calendar });
+    for (const obj of objects) {
+      const todo = parseTodo(obj.data, calendar.displayName);
+      if (todo && todo.uid === options.uid) {
+        found = obj;
+        foundCalendar = calendar;
+        break;
+      }
+    }
+    if (found) break;
+  }
+
+  if (!found) throw new Error(`Todo not found: ${options.uid}`);
+
+  const existing = parseTodo(found.data, foundCalendar.displayName);
+
+  const updatedObj = {
+    uid: existing.uid,
+    summary: options.summary || existing.summary,
+    due: options.due || existing.due,
+    description: options.description !== undefined ? options.description : existing.description,
+    priority: options.priority ? parseInt(options.priority) : existing.priority,
+    status: options.status || existing.status,
+  };
+
+  const iCalString = generateTodo(updatedObj);
+  found.data = iCalString;
+
+  await client.updateCalendarObject({ calendarObject: found });
+
+  return { success: true, uid: existing.uid };
+}
+
+async function deleteTodo(options) {
+  const client = await createClient();
+  const calendars = await client.fetchCalendars();
+
+  let found = null;
+
+  for (const calendar of calendars) {
+    const objects = await client.fetchCalendarObjects({ calendar });
+    for (const obj of objects) {
+      const todo = parseTodo(obj.data, calendar.displayName);
+      if (todo && todo.uid === options.uid) {
+        found = obj;
+        break;
+      }
+    }
+    if (found) break;
+  }
+
+  if (!found) throw new Error(`Todo not found: ${options.uid}`);
+
+  await client.deleteCalendarObject({ calendarObject: found });
+
+  return { success: true, uid: options.uid };
+}
+
+async function freebusy(options) {
+  const client = await createClient();
+  const calendar = await resolveCalendar(client, options.calendar);
+
+  const result = await client.freeBusyQuery({
+    calendar,
+    timeRange: {
+      start: options.start,
+      end: options.end,
+    },
+  });
+
+  return {
+    busy: (result || []).map((period) => ({
+      start: period.start,
+      end: period.end,
+      type: period.type || 'BUSY',
+    })),
+  };
+}
+
 function displayAccounts(accounts, configPath) {
   if (!configPath) {
     console.error('No configuration file found.');
@@ -275,6 +411,38 @@ async function main() {
           throw new Error('Missing required option: --uid <uid>');
         }
         result = await deleteEvent(options);
+        break;
+
+      case 'list-todos':
+        result = await listTodos(options);
+        break;
+
+      case 'create-todo':
+        if (!options.summary) {
+          throw new Error('Missing required option: --summary <text>');
+        }
+        result = await createTodo(options);
+        break;
+
+      case 'update-todo':
+        if (!options.uid) {
+          throw new Error('Missing required option: --uid <uid>');
+        }
+        result = await updateTodo(options);
+        break;
+
+      case 'delete-todo':
+        if (!options.uid) {
+          throw new Error('Missing required option: --uid <uid>');
+        }
+        result = await deleteTodo(options);
+        break;
+
+      case 'freebusy':
+        if (!options.start || !options.end) {
+          throw new Error('Missing required options: --start <datetime> --end <datetime>');
+        }
+        result = await freebusy(options);
         break;
 
       default:
