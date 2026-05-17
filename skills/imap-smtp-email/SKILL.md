@@ -281,3 +281,7 @@ node scripts/smtp.js [--account <name>] test
 **TLS/SSL errors:**
 - Match `IMAP_TLS`/`SMTP_SECURE` setting to server requirements
 - For self-signed certs: set `IMAP_REJECT_UNAUTHORIZED=false` or `SMTP_REJECT_UNAUTHORIZED=false`
+
+## Related Skills
+
+- **[caldav-sync](https://clawhub.ai/gzlicanyi/caldav-sync)** - Calendar and task management via CalDAV protocol. Manage events, todos, and free/busy queries with Google Calendar, iCloud, NetEase, and more.

@@ -198,3 +198,7 @@ node scripts/caldav.js list-accounts
 **No calendars found:**
 - Verify CalDAV service is enabled in your account settings
 - Check the server URL includes the correct path
+
+## Related Skills
+
+- **[imap-smtp-email](https://clawhub.ai/gzlicanyi/imap-smtp-email)** - Read, search, manage, and send emails via IMAP/SMTP. Supports Gmail, Outlook, NetEase (163/126/188), and any standard IMAP/SMTP server.

@@ -39,7 +39,6 @@
 ## 🛠️ Supported Platforms
 
 - **[Claude Code](https://claude.com/claude-code)** - Anthropic's official CLI for Claude
-- **[OpenClaw](https://github.com/nbrown/oai-cli)** - OpenAI CLI with skill support
 - **[ClawHub](https://clawhub.ai/gzlicanyi/imap-smtp-email)** - Browse and install this skill
 - And other compatible skill-based AI platforms
 
@@ -47,7 +46,8 @@
 
 ### Via ClawHub
 
-Visit the skill page on ClawHub: https://clawhub.ai/gzlicanyi/imap-smtp-email
+- **imap-smtp-email**: https://clawhub.ai/gzlicanyi/imap-smtp-email
+- **caldav-sync**: https://clawhub.ai/gzlicanyi/caldav-sync
 
 ### Via CLI (Claude Code / OpenClaw)
 
