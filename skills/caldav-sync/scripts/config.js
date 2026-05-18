@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const dotenv = require('dotenv');
-const { PROVIDERS } = require('../../shared/providers');
+const { PROVIDERS } = require('./providers');
 
 const SHARED_ENV_PATH = path.join(os.homedir(), '.config', 'mail-skills', '.env');
 const FALLBACK_ENV_PATH = path.resolve(__dirname, '../.env');

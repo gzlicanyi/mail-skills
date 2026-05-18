@@ -54,9 +54,8 @@ if [ "$MIGRATE" = true ]; then
   set +a
 
   # Detect provider from IMAP_HOST
-  SHARED_DIR="$(cd "$SKILL_DIR/../../shared" && pwd)"
   PROVIDER=$(node -e "
-    const { detectProvider } = require('$SHARED_DIR/providers');
+    const { detectProvider } = require('$SKILL_DIR/scripts/providers');
     const provider = detectProvider(process.env.IMAP_HOST || '');
     console.log(provider || 'custom');
   ")
@@ -100,7 +99,7 @@ EOF
     if [[ "$key" =~ ^([A-Z0-9]+)_IMAP_HOST$ ]]; then
       NP="${BASH_REMATCH[1]}"
       NPROVIDER=$(node -e "
-        const { detectProvider } = require('$SHARED_DIR/providers');
+        const { detectProvider } = require('$SKILL_DIR/scripts/providers');
         const provider = detectProvider('$value');
         console.log(provider || 'custom');
       ")
