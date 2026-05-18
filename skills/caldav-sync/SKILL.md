@@ -9,10 +9,10 @@ metadata:
         - node
         - npm
       env:
-        - CALDAV_SERVER_URL
-        - CALDAV_USERNAME
-        - CALDAV_PASSWORD
-    primaryEnv: CALDAV_SERVER_URL
+        - PROVIDER
+        - USERNAME
+        - PASSWORD
+    primaryEnv: PROVIDER
 ---
 
 # CalDAV Sync Tool

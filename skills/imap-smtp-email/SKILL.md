@@ -9,13 +9,10 @@ metadata:
         - node
         - npm
       env:
-        - IMAP_HOST
-        - IMAP_USER
-        - IMAP_PASS
-        - SMTP_HOST
-        - SMTP_USER
-        - SMTP_PASS
-    primaryEnv: SMTP_PASS
+        - PROVIDER
+        - USERNAME
+        - PASSWORD
+    primaryEnv: PROVIDER
 ---
 
 # IMAP/SMTP Email Tool
