@@ -4,13 +4,14 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const dotenv = require('dotenv');
+const { PROVIDERS } = require('../../shared/providers');
 
-const PRIMARY_ENV_PATH = path.join(os.homedir(), '.config', 'caldav-sync', '.env');
+const SHARED_ENV_PATH = path.join(os.homedir(), '.config', 'mail-skills', '.env');
 const FALLBACK_ENV_PATH = path.resolve(__dirname, '../.env');
 
 function findEnvPath() {
-  if (fs.existsSync(PRIMARY_ENV_PATH)) return PRIMARY_ENV_PATH;
-  if (fs.existsSync(FALLBACK_ENV_PATH)) return FALLBACK_ENV_PATH;
+  if (fs.existsSync(SHARED_ENV_PATH)) return { path: SHARED_ENV_PATH, type: 'shared' };
+  if (fs.existsSync(FALLBACK_ENV_PATH)) return { path: FALLBACK_ENV_PATH, type: 'legacy' };
   return null;
 }
 
@@ -25,13 +26,59 @@ function parseAccountFromArgv(argv) {
   return { accountName: null, remainingArgs: args };
 }
 
-function buildConfig(env, prefix) {
+function buildConfigFromShared(env, prefix) {
+  const p = prefix ? `${prefix}_` : '';
+
+  const provider = env[`${p}PROVIDER`];
+  if (!provider) return null;
+
+  const username = env[`${p}USERNAME`];
+  const password = env[`${p}PASSWORD`];
+
+  if (!username || !password) return null;
+
+  if (provider === 'custom') {
+    const serverUrl = env[`${p}CALDAV_SERVER_URL`];
+    if (!serverUrl) return null;
+    return {
+      serverUrl,
+      username,
+      password,
+      defaultCalendar: env[`${p}CALDAV_DEFAULT_CALENDAR`] || '',
+      principalUrl: env[`${p}CALDAV_PRINCIPAL_URL`] || '',
+      homeUrl: env[`${p}CALDAV_HOME_URL`] || '',
+    };
+  }
+
+  const preset = PROVIDERS[provider];
+  if (!preset) {
+    console.error(`Error: Unknown provider "${provider}". Available: ${Object.keys(PROVIDERS).join(', ')}, custom`);
+    process.exit(1);
+  }
+  if (!preset.caldav) {
+    console.error(`Error: Provider "${provider}" does not support CalDAV.`);
+    process.exit(1);
+  }
+
+  return {
+    serverUrl: preset.caldav,
+    username,
+    password,
+    defaultCalendar: env[`${p}CALDAV_DEFAULT_CALENDAR`] || '',
+    principalUrl: '',
+    homeUrl: '',
+  };
+}
+
+function buildConfigFromLegacy(env, prefix) {
   const p = prefix ? `${prefix}_` : '';
 
   if (prefix && !env[`${p}CALDAV_SERVER_URL`]) {
-    console.error(`Error: Account "${prefix.toLowerCase()}" not found in config. Check ~/.config/caldav-sync/.env`);
+    console.error(`Error: Account "${prefix.toLowerCase()}" not found in config.`);
     process.exit(1);
   }
+
+  if (!env[`${p}CALDAV_SERVER_URL`]) return null;
 
   return {
     serverUrl: env[`${p}CALDAV_SERVER_URL`],
@@ -44,13 +91,70 @@ function buildConfig(env, prefix) {
 }
 
 function listAccounts() {
-  const envPath = findEnvPath();
-  if (!envPath) {
-    return { accounts: [], configPath: null };
+  const allAccounts = [];
+  const seen = new Set();
+  let primaryConfigPath = null;
+
+  if (fs.existsSync(SHARED_ENV_PATH)) {
+    primaryConfigPath = SHARED_ENV_PATH;
+    const env = dotenv.config({ path: SHARED_ENV_PATH }).parsed || {};
+    const accounts = scanSharedAccounts(env);
+    for (const a of accounts) seen.add(a.name);
+    allAccounts.push(...accounts);
   }
 
-  const dotenvResult = dotenv.config({ path: envPath });
-  const env = dotenvResult.parsed || {};
+  if (fs.existsSync(FALLBACK_ENV_PATH)) {
+    if (!primaryConfigPath) primaryConfigPath = FALLBACK_ENV_PATH;
+    const env = dotenv.config({ path: FALLBACK_ENV_PATH }).parsed || {};
+    const accounts = scanLegacyAccounts(env);
+    for (const a of accounts) {
+      if (!seen.has(a.name)) {
+        allAccounts.push(a);
+        seen.add(a.name);
+      }
+    }
+  }
+
+  return { accounts: allAccounts, configPath: primaryConfigPath };
+}
+
+function scanSharedAccounts(env) {
+  const accounts = [];
+  const seen = new Set();
+
+  if (env.PROVIDER) {
+    const preset = PROVIDERS[env.PROVIDER];
+    accounts.push({
+      name: 'default',
+      serverUrl: (preset && preset.caldav) || env.CALDAV_SERVER_URL || '-',
+      username: env.USERNAME || '-',
+      isComplete: !!(env.USERNAME && env.PASSWORD && (preset?.caldav || env.CALDAV_SERVER_URL)),
+    });
+    seen.add('default');
+  }
+
+  for (const key of Object.keys(env)) {
+    const match = key.match(/^([A-Z0-9]+)_PROVIDER$/);
+    if (match) {
+      const prefix = match[1];
+      const name = prefix.toLowerCase();
+      if (!seen.has(name)) {
+        const preset = PROVIDERS[env[`${prefix}_PROVIDER`]];
+        accounts.push({
+          name,
+          serverUrl: (preset && preset.caldav) || env[`${prefix}_CALDAV_SERVER_URL`] || '-',
+          username: env[`${prefix}_USERNAME`] || '-',
+          isComplete: !!(env[`${prefix}_USERNAME`] && env[`${prefix}_PASSWORD`] && (preset?.caldav || env[`${prefix}_CALDAV_SERVER_URL`])),
+        });
+        seen.add(name);
+      }
+    }
+  }
+
+  return accounts;
+}
+
+function scanLegacyAccounts(env) {
   const accounts = [];
   const seen = new Set();
 
@@ -81,20 +185,35 @@ function listAccounts() {
     }
   }
 
-  return { accounts, configPath: envPath };
+  return accounts;
 }
 
-const envPath = findEnvPath();
-if (envPath) {
-  dotenv.config({ path: envPath });
-}
+// --- Module initialization ---
+const envInfo = findEnvPath();
 
 const { accountName, remainingArgs } = parseAccountFromArgv(process.argv);
 const prefix = accountName ? accountName.toUpperCase() : null;
 
 process.argv = [process.argv[0], process.argv[1], ...remainingArgs];
 
-const config = buildConfig(process.env, prefix);
+let config;
+if (envInfo) {
+  const parsed = dotenv.config({ path: envInfo.path }).parsed || {};
+  if (envInfo.type === 'shared') {
+    config = buildConfigFromShared(parsed, prefix);
+  } else {
+    config = buildConfigFromLegacy(parsed, prefix);
+  }
+}
+
+if (!config) {
+  if (accountName) {
+    console.error(`Error: Account "${accountName}" not found. Check ~/.config/mail-skills/.env`);
+  } else {
+    console.error('Error: No CalDAV configuration found. Run "bash setup.sh" to configure.');
+  }
+  process.exit(1);
+}
 
 module.exports = config;
 module.exports.listAccounts = listAccounts;
