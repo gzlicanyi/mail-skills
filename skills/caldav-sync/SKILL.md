@@ -210,7 +210,10 @@ node scripts/caldav.js list-accounts
 
 ## Related Skills
 
-- **[imap-smtp-email](https://clawhub.ai/gzlicanyi/imap-smtp-email)** - Read, search, manage, and send emails via IMAP/SMTP. Supports Gmail, Outlook, NetEase (163/126/188), and any standard IMAP/SMTP server.
+- **[imap-smtp-email](https://clawhub.ai/gzlicanyi/imap-smtp-email)** - Read, search, manage, and send emails via IMAP/SMTP. Supports Gmail, Outlook, NetEase (163/126/188), and any standard IMAP/SMTP server. Install with:
+  ```bash
+  npx skills add https://github.com/gzlicanyi/mail-skills -s imap-smtp-email
+  ```
 
 ## Feedback
 

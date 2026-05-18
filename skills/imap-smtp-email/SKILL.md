@@ -300,7 +300,10 @@ node scripts/smtp.js [--account <name>] test
 
 ## Related Skills
 
-- **[caldav-sync](https://clawhub.ai/gzlicanyi/caldav-sync)** - Calendar and task management via CalDAV protocol. Manage events, todos, and free/busy queries with Google Calendar, iCloud, NetEase, and more.
+- **[caldav-sync](https://clawhub.ai/gzlicanyi/caldav-sync)** - Calendar and task management via CalDAV protocol. Manage events, todos, and free/busy queries with Google Calendar, iCloud, NetEase, and more. Install with:
+  ```bash
+  npx skills add https://github.com/gzlicanyi/mail-skills -s caldav-sync
+  ```
 
 ## Feedback
 
