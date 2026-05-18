@@ -36,9 +36,34 @@ If running commands manually without setup.sh, install dependencies first:
 npm install --production
 ```
 
-Configuration is stored at `~/.config/imap-smtp-email/.env` (survives skill updates). If no config is found there, the skill falls back to a `.env` file in the skill directory (for backward compatibility).
+Configuration is stored at `~/.config/mail-skills/.env` (shared with caldav-sync skill, survives skill updates). If no shared config is found, the skill checks `~/.config/imap-smtp-email/.env` (legacy) and then a `.env` file in the skill directory.
 
-### Config file format
+### Config file format (shared)
+
+```bash
+# Default account
+PROVIDER=163
+USERNAME=your@163.com
+PASSWORD=your_password
+
+# File access whitelist (security)
+ALLOWED_READ_DIRS=~/Downloads,~/Documents
+ALLOWED_WRITE_DIRS=~/Downloads
+```
+
+The `PROVIDER` preset auto-fills IMAP/SMTP server settings. For custom servers:
+
+```bash
+PROVIDER=custom
+USERNAME=your@email.com
+PASSWORD=your_password
+IMAP_HOST=imap.example.com
+SMTP_HOST=smtp.example.com
+```
+
+### Legacy config file format
+
+If you have an existing `~/.config/imap-smtp-email/.env`, it takes priority over the shared config. The format is:
 
 ```bash
 # Default account (no prefix)
@@ -63,6 +88,8 @@ ALLOWED_READ_DIRS=~/Downloads,~/Documents
 ALLOWED_WRITE_DIRS=~/Downloads
 ```
 
+Run `bash setup.sh` to migrate your legacy config to the shared format.
+
 ## Multi-Account
 
 You can configure additional email accounts in the same config file. Each account uses a name prefix (uppercase) on all variables.
@@ -75,24 +102,13 @@ Run the setup script and choose "Add a new account":
 bash setup.sh
 ```
 
-Or manually add prefixed variables to `~/.config/imap-smtp-email/.env`:
+Or manually add prefixed variables to `~/.config/mail-skills/.env`:
 
 ```bash
 # Work account (WORK_ prefix)
-WORK_IMAP_HOST=imap.company.com
-WORK_IMAP_PORT=993
-WORK_IMAP_USER=me@company.com
-WORK_IMAP_PASS=password
-WORK_IMAP_TLS=true
-WORK_IMAP_REJECT_UNAUTHORIZED=true
-WORK_IMAP_MAILBOX=INBOX
-WORK_SMTP_HOST=smtp.company.com
-WORK_SMTP_PORT=587
-WORK_SMTP_SECURE=false
-WORK_SMTP_USER=me@company.com
-WORK_SMTP_PASS=password
-WORK_SMTP_FROM=me@company.com
-WORK_SMTP_REJECT_UNAUTHORIZED=true
+WORK_PROVIDER=gmail
+WORK_USERNAME=me@company.com
+WORK_PASSWORD=app_password
 ```
 
 ### Using a named account
@@ -110,7 +126,7 @@ Without `--account`, the default (unprefixed) account is used.
 
 - Letters and digits only (e.g., `work`, `163`, `personal2`)
 - Case-insensitive: `work` and `WORK` refer to the same account
-- The prefix in `.env` is always uppercase (e.g., `WORK_IMAP_HOST`)
+- The prefix in `.env` is always uppercase (e.g., `WORK_PROVIDER`)
 - `ALLOWED_READ_DIRS` and `ALLOWED_WRITE_DIRS` are shared across all accounts (always unprefixed)
 
 ## Common Email Servers
@@ -262,7 +278,7 @@ node scripts/smtp.js [--account <name>] test
 
 ## Security Notes
 
-- Configuration is stored at `~/.config/imap-smtp-email/.env` with `600` permissions (owner read/write only)
+- Configuration is stored at `~/.config/mail-skills/.env` (or `~/.config/imap-smtp-email/.env` for legacy) with `600` permissions (owner read/write only)
 - **Gmail**: regular password is rejected — generate an App Password at https://myaccount.google.com/apppasswords
 - For 163.com: use authorization code (授权码), not account password
 
