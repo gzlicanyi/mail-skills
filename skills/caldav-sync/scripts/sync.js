@@ -220,6 +220,150 @@ async function doCtagEtagSync(client, calendar, account) {
   return objects;
 }
 
+async function doSyncTokenSync(client, calendar, account) {
+  const calendarUid = getCalendarUid(calendar);
+  const state = loadSyncState(account, calendarUid);
+  const objects = loadObjects(account, calendarUid) || { events: {}, todos: {} };
+
+  const body = `<?xml version="1.0" encoding="utf-8" ?>
+<sync-collection xmlns="urn:ietf:params:xml:ns:caldav">
+  <sync-token>${state.syncToken}</sync-token>
+  <sync-level>1</sync-level>
+  <prop>
+    <getetag/>
+    <calendar-data/>
+  </prop>
+</sync-collection>`;
+
+  const resp = await davRequest(calendar.url, 'REPORT', body);
+
+  if (resp.status === 410) {
+    // Token expired, re-sync from scratch
+    clearCache(account, calendarUid);
+    return doFullSync(client, calendar, account);
+  }
+
+  if (!resp.ok) {
+    // Fallback to ctag mode
+    const newState = { ...state, mode: 'ctag', ctag: null, etags: {} };
+    saveSyncState(account, calendarUid, newState);
+    return doCtagEtagSync(client, calendar, account);
+  }
+
+  const text = await resp.text();
+
+  // Parse new sync token
+  const tokenMatch = text.match(/<[^>]*sync-token[^>]*>(.*?)<\/[^>]*sync-token>/);
+  const newToken = tokenMatch ? tokenMatch[1] : state.syncToken;
+
+  // Parse response blocks
+  const blocks = text.split(/<\/[^>]*response>/i);
+  for (const block of blocks) {
+    const hrefMatch = block.match(/<[^>]*href[^>]*>(.*?)<\/[^>]*href>/i);
+    const dataMatch = block.match(/<[^>]*calendar-data[^>]*>([\s\S]*?)<\/[^>]*calendar-data>/);
+
+    if (!hrefMatch) continue;
+
+    const href = hrefMatch[1];
+
+    if (dataMatch) {
+      // New or modified resource
+      const data = dataMatch[1];
+      const event = parseEvent(data, calendar.displayName);
+      if (event) {
+        objects.events[event.uid] = event;
+        continue;
+      }
+      const todo = parseTodo(data, calendar.displayName);
+      if (todo) {
+        objects.todos[todo.uid] = todo;
+      }
+    } else {
+      // Deleted resource — no calendar-data means removal
+      for (const uid of Object.keys(objects.events)) {
+        if (href.includes(uid)) delete objects.events[uid];
+      }
+      for (const uid of Object.keys(objects.todos)) {
+        if (href.includes(uid)) delete objects.todos[uid];
+      }
+    }
+  }
+
+  // Update state
+  const updatedState = {
+    ...state,
+    mode: 'sync-token',
+    syncToken: newToken,
+    lastSync: new Date().toISOString(),
+  };
+  saveSyncState(account, calendarUid, updatedState);
+  saveObjects(account, calendarUid, objects);
+
+  return objects;
+}
+
+async function doFullSync(client, calendar, account) {
+  const calendarUid = getCalendarUid(calendar);
+
+  const objects = await client.fetchCalendarObjects({ calendar });
+
+  const cachedObjects = { events: {}, todos: {} };
+  const etags = {};
+
+  for (const obj of objects) {
+    const event = parseEvent(obj.data, calendar.displayName);
+    if (event) {
+      cachedObjects.events[event.uid] = event;
+      if (obj.url) etags[obj.url] = obj.etag;
+      continue;
+    }
+    const todo = parseTodo(obj.data, calendar.displayName);
+    if (todo) {
+      cachedObjects.todos[todo.uid] = todo;
+      if (obj.url) etags[obj.url] = obj.etag;
+    }
+  }
+
+  // Detect sync mode for future syncs
+  const modeInfo = await detectSyncMode(calendar);
+
+  const state = {
+    mode: modeInfo.mode,
+    syncToken: modeInfo.syncToken || '',
+    ctag: modeInfo.ctag || '',
+    etags,
+    lastSync: new Date().toISOString(),
+  };
+
+  saveSyncState(account, calendarUid, state);
+  saveObjects(account, calendarUid, cachedObjects);
+
+  return cachedObjects;
+}
+
+async function syncCalendarObjects(client, calendar, account, forceRefresh) {
+  const calendarUid = getCalendarUid(calendar);
+
+  if (forceRefresh) {
+    clearCache(account, calendarUid);
+  }
+
+  const state = loadSyncState(account, calendarUid);
+
+  if (!state) {
+    return doFullSync(client, calendar, account);
+  }
+
+  switch (state.mode) {
+    case 'sync-token':
+      return doSyncTokenSync(client, calendar, account);
+    case 'ctag':
+      return doCtagEtagSync(client, calendar, account);
+    default:
+      return doFullSync(client, calendar, account);
+  }
+}
+
 module.exports = {
   getAuthHeaders,
   davRequest,
@@ -229,4 +373,7 @@ module.exports = {
   fetchAllEtags,
   fetchObjectsByUrls,
   doCtagEtagSync,
+  doSyncTokenSync,
+  doFullSync,
+  syncCalendarObjects,
 };
