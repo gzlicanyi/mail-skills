@@ -147,7 +147,7 @@ async function fetchObjectsByUrls(calendarUrl, urls) {
 async function doCtagEtagSync(client, calendar, account) {
   const calendarUid = getCalendarUid(calendar);
   const state = loadSyncState(account, calendarUid);
-  const objects = loadObjects(account, calendarUid) || { events: {}, todos: {} };
+  const objects = loadObjects(account, calendarUid) || { events: {}, todos: {}, urlMap: {} };
 
   // Get current ctag
   const ctagResult = await tryGetCtag(calendar.url);
@@ -184,26 +184,24 @@ async function doCtagEtagSync(client, calendar, account) {
       const event = parseEvent(obj.data, calendar.displayName);
       if (event) {
         objects.events[event.uid] = event;
+        if (obj.url) objects.urlMap[obj.url] = event.uid;
         continue;
       }
       const todo = parseTodo(obj.data, calendar.displayName);
       if (todo) {
         objects.todos[todo.uid] = todo;
+        if (obj.url) objects.urlMap[obj.url] = todo.uid;
       }
     }
   }
 
-  // Remove deleted objects
+  // Remove deleted objects using urlMap for reliable lookup
   for (const url of deletedUrls) {
-    for (const uid of Object.keys(objects.events)) {
-      if (url.includes(uid)) {
-        delete objects.events[uid];
-      }
-    }
-    for (const uid of Object.keys(objects.todos)) {
-      if (url.includes(uid)) {
-        delete objects.todos[uid];
-      }
+    const uid = objects.urlMap[url];
+    if (uid) {
+      delete objects.events[uid];
+      delete objects.todos[uid];
+      delete objects.urlMap[url];
     }
   }
 
@@ -223,7 +221,7 @@ async function doCtagEtagSync(client, calendar, account) {
 async function doSyncTokenSync(client, calendar, account) {
   const calendarUid = getCalendarUid(calendar);
   const state = loadSyncState(account, calendarUid);
-  const objects = loadObjects(account, calendarUid) || { events: {}, todos: {} };
+  const objects = loadObjects(account, calendarUid) || { events: {}, todos: {}, urlMap: {} };
 
   const body = `<?xml version="1.0" encoding="utf-8" ?>
 <sync-collection xmlns="urn:ietf:params:xml:ns:caldav">
@@ -272,19 +270,21 @@ async function doSyncTokenSync(client, calendar, account) {
       const event = parseEvent(data, calendar.displayName);
       if (event) {
         objects.events[event.uid] = event;
+        objects.urlMap[href] = event.uid;
         continue;
       }
       const todo = parseTodo(data, calendar.displayName);
       if (todo) {
         objects.todos[todo.uid] = todo;
+        objects.urlMap[href] = todo.uid;
       }
     } else {
-      // Deleted resource — no calendar-data means removal
-      for (const uid of Object.keys(objects.events)) {
-        if (href.includes(uid)) delete objects.events[uid];
-      }
-      for (const uid of Object.keys(objects.todos)) {
-        if (href.includes(uid)) delete objects.todos[uid];
+      // Deleted resource — use urlMap for reliable UID lookup
+      const uid = objects.urlMap[href];
+      if (uid) {
+        delete objects.events[uid];
+        delete objects.todos[uid];
+        delete objects.urlMap[href];
       }
     }
   }
@@ -307,20 +307,26 @@ async function doFullSync(client, calendar, account) {
 
   const objects = await client.fetchCalendarObjects({ calendar });
 
-  const cachedObjects = { events: {}, todos: {} };
+  const cachedObjects = { events: {}, todos: {}, urlMap: {} };
   const etags = {};
 
   for (const obj of objects) {
     const event = parseEvent(obj.data, calendar.displayName);
     if (event) {
       cachedObjects.events[event.uid] = event;
-      if (obj.url) etags[obj.url] = obj.etag;
+      if (obj.url) {
+        etags[obj.url] = obj.etag;
+        cachedObjects.urlMap[obj.url] = event.uid;
+      }
       continue;
     }
     const todo = parseTodo(obj.data, calendar.displayName);
     if (todo) {
       cachedObjects.todos[todo.uid] = todo;
-      if (obj.url) etags[obj.url] = obj.etag;
+      if (obj.url) {
+        etags[obj.url] = obj.etag;
+        cachedObjects.urlMap[obj.url] = todo.uid;
+      }
     }
   }
 
