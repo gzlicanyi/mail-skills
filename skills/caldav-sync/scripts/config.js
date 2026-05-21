@@ -215,7 +215,7 @@ if (!config) {
   process.exit(1);
 }
 
-config._accountName = accountName;
+config._accountName = accountName || 'default';
 
 module.exports = config;
 module.exports.listAccounts = listAccounts;
