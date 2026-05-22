@@ -106,7 +106,9 @@ function buildConfigFromShared(env, prefix) {
       user: username,
       pass: password,
       tls: imapPreset.tls,
-      rejectUnauthorized: imapPreset.rejectUnauthorized,
+      rejectUnauthorized: env[`${p}IMAP_REJECT_UNAUTHORIZED`] !== undefined
+        ? env[`${p}IMAP_REJECT_UNAUTHORIZED`] !== 'false'
+        : imapPreset.rejectUnauthorized,
       mailbox: env[`${p}IMAP_MAILBOX`] || 'INBOX',
     },
     smtp: {
@@ -116,7 +118,9 @@ function buildConfigFromShared(env, prefix) {
       pass: password,
       secure: smtpPreset.secure,
       from: username,
-      rejectUnauthorized: smtpPreset.rejectUnauthorized,
+      rejectUnauthorized: env[`${p}SMTP_REJECT_UNAUTHORIZED`] !== undefined
+        ? env[`${p}SMTP_REJECT_UNAUTHORIZED`] !== 'false'
+        : smtpPreset.rejectUnauthorized,
     },
     allowedReadDirs: (env.ALLOWED_READ_DIRS || '~/Downloads,~/Documents').split(',').map(d => d.trim()).filter(Boolean),
     allowedWriteDirs: (env.ALLOWED_WRITE_DIRS || '~/Downloads').split(',').map(d => d.trim()).filter(Boolean),

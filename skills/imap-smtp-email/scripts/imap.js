@@ -131,6 +131,63 @@ function openBox(imap, mailbox, readOnly = false) {
   });
 }
 
+// Search and return UIDs only
+function searchUids(imap, criteria) {
+  return new Promise((resolve, reject) => {
+    imap.search(criteria, (err, results) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(results || []);
+    });
+  });
+}
+
+// Fetch messages by specific UIDs
+function fetchByUids(imap, uids, fetchOptions) {
+  return new Promise((resolve, reject) => {
+    const fetch = imap.fetch(uids, fetchOptions);
+    const messages = [];
+
+    fetch.on('message', (msg) => {
+      const parts = [];
+
+      msg.on('body', (stream, info) => {
+        let buffer = '';
+
+        stream.on('data', (chunk) => {
+          buffer += chunk.toString('utf8');
+        });
+
+        stream.once('end', () => {
+          parts.push({ which: info.which, body: buffer });
+        });
+      });
+
+      msg.once('attributes', (attrs) => {
+        parts.forEach((part) => {
+          part.attributes = attrs;
+        });
+      });
+
+      msg.once('end', () => {
+        if (parts.length > 0) {
+          messages.push(parts[0]);
+        }
+      });
+    });
+
+    fetch.once('error', (err) => {
+      reject(err);
+    });
+
+    fetch.once('end', () => {
+      resolve(messages);
+    });
+  });
+}
+
 // Search for messages
 function searchMessages(imap, criteria, fetchOptions) {
   return new Promise((resolve, reject) => {
@@ -226,24 +283,22 @@ async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = n
       searchCriteria.push(['SINCE', sinceDate]);
     }
 
-    // Fetch messages sorted by date (newest first)
+    // Search returns UIDs in ascending order; take only the last `limit`
+    const allUids = await searchUids(imap, searchCriteria);
+    if (allUids.length === 0) return [];
+
+    const fetchUids = allUids.slice(-limit).reverse();
+
     const fetchOptions = {
       bodies: [''],
       markSeen: false,
     };
 
-    const messages = await searchMessages(imap, searchCriteria, fetchOptions);
-
-    // Sort by date (newest first) - parse from message attributes
-    const sortedMessages = messages.sort((a, b) => {
-      const dateA = a.attributes.date ? new Date(a.attributes.date) : new Date(0);
-      const dateB = b.attributes.date ? new Date(b.attributes.date) : new Date(0);
-      return dateB - dateA;
-    }).slice(0, limit);
+    const messages = await fetchByUids(imap, fetchUids, fetchOptions);
 
     const results = [];
 
-    for (const item of sortedMessages) {
+    for (const item of messages) {
       const bodyStr = item.body;
       const parsed = await parseEmail(bodyStr);
 
