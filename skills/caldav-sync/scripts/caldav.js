@@ -51,6 +51,17 @@ async function createClient() {
     const client = new DAVClient(clientParams);
     // Skip login() — set auth headers and account directly for non-standard servers
     client.authHeaders = getBasicAuthHeaders(clientParams.credentials);
+
+    // Verify credentials before proceeding
+    const authResp = await fetch(principalUrl, {
+      method: 'PROPFIND',
+      headers: { ...client.authHeaders, 'Content-Type': 'application/xml; charset=utf-8', Depth: '0' },
+      body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><displayname/></prop></propfind>',
+    });
+    if (authResp.status === 401 || authResp.status === 403) {
+      throw new Error(`Authentication failed (HTTP ${authResp.status}). Check your username and password.`);
+    }
+
     client.account = {
       serverUrl: config.serverUrl,
       credentials: clientParams.credentials,
@@ -64,7 +75,14 @@ async function createClient() {
     return client;
   }
 
-  return await createDAVClient(clientParams);
+  try {
+    return await createDAVClient(clientParams);
+  } catch (e) {
+    if (e.message && /401|403|auth/i.test(e.message)) {
+      throw new Error(`Authentication failed. Check your username and password. (${e.message})`);
+    }
+    throw e;
+  }
 }
 
 function getBasicAuthHeaders(credentials) {
