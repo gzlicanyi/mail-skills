@@ -5,7 +5,7 @@ const { randomUUID } = require('crypto');
 const config = require('./config');
 const { parseEvent, generateEvent, parseTodo, generateTodo, parseFreebusy } = require('./ical');
 const { syncCalendarObjects } = require('./sync');
-const { clearCache, getCalendarUid } = require('./cache');
+const { clearCache, getCalendarUid, upsertCachedEvent, upsertCachedTodo, deleteCachedObject } = require('./cache');
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -269,7 +269,18 @@ async function createEvent(options) {
     await client.createCalendarObject({ calendar, iCalString, filename });
   }
 
-  clearCache(config._accountName || 'default', getCalendarUid(calendar));
+  const accountName = config._accountName || 'default';
+  const calendarUid = getCalendarUid(calendar);
+  upsertCachedEvent(accountName, calendarUid, {
+    uid,
+    summary: eventObj.summary,
+    start: eventObj.start,
+    end: eventObj.end,
+    location: eventObj.location || '',
+    description: eventObj.description || '',
+    recurrence: false,
+    calendar: calendar.displayName || '',
+  });
   return { success: true, uid, url };
 }
 
@@ -306,7 +317,17 @@ async function updateEvent(options) {
     await client.updateCalendarObject({ calendarObject: found });
   }
 
-  clearCache(config._accountName || 'default', getCalendarUid(calendar));
+  const accountName = config._accountName || 'default';
+  upsertCachedEvent(accountName, getCalendarUid(calendar), {
+    uid: updatedObj.uid,
+    summary: updatedObj.summary,
+    start: updatedObj.start,
+    end: updatedObj.end,
+    location: updatedObj.location,
+    description: updatedObj.description,
+    recurrence: existing.recurrence,
+    calendar: calendar.displayName || '',
+  });
   return { success: true, uid: existing.uid };
 }
 
@@ -329,7 +350,7 @@ async function deleteEvent(options) {
     await client.deleteCalendarObject({ calendarObject: found });
   }
 
-  clearCache(config._accountName || 'default', getCalendarUid(calendar));
+  deleteCachedObject(config._accountName || 'default', getCalendarUid(calendar), options.uid);
   return { success: true, uid: options.uid };
 }
 
@@ -426,7 +447,16 @@ async function createTodo(options) {
     await client.createCalendarObject({ calendar, iCalString, filename });
   }
 
-  clearCache(config._accountName || 'default', getCalendarUid(calendar));
+  const accountName = config._accountName || 'default';
+  upsertCachedTodo(accountName, getCalendarUid(calendar), {
+    uid,
+    summary: todoObj.summary,
+    due: todoObj.due,
+    status: todoObj.status,
+    priority: todoObj.priority,
+    description: todoObj.description,
+    calendar: calendar.displayName || '',
+  });
   return { success: true, uid, url };
 }
 
@@ -482,8 +512,17 @@ async function updateTodo(options) {
     await client.updateCalendarObject({ calendarObject: found });
   }
 
+  const accountName = config._accountName || 'default';
   for (const cal of vtodoCalendars) {
-    clearCache(config._accountName || 'default', getCalendarUid(cal));
+    upsertCachedTodo(accountName, getCalendarUid(cal), {
+      uid: updatedObj.uid,
+      summary: updatedObj.summary,
+      due: updatedObj.due,
+      status: updatedObj.status,
+      priority: updatedObj.priority,
+      description: updatedObj.description,
+      calendar: found.calendarName || '',
+    });
   }
   return { success: true, uid: existing.uid };
 }
@@ -508,8 +547,9 @@ async function deleteTodo(options) {
     await client.deleteCalendarObject({ calendarObject: found });
   }
 
+  const accountName = config._accountName || 'default';
   for (const cal of vtodoCalendars) {
-    clearCache(config._accountName || 'default', getCalendarUid(cal));
+    deleteCachedObject(accountName, getCalendarUid(cal), options.uid);
   }
   return { success: true, uid: options.uid };
 }

@@ -134,9 +134,11 @@ async function fetchObjectsByUrls(calendarUrl, urls) {
     const etagMatch = block.match(/<[^>]*getetag[^>]*>(.*?)<\/[^>]*getetag>/i);
 
     if (hrefMatch && dataMatch) {
+      let data = dataMatch[1];
+      if (data.startsWith('<![CDATA[')) data = data.substring(9, data.length - 3);
       results.push({
         url: hrefMatch[1],
-        data: dataMatch[1],
+        data,
         etag: etagMatch ? etagMatch[1] : null,
       });
     }
@@ -266,7 +268,8 @@ async function doSyncTokenSync(client, calendar, account) {
 
     if (dataMatch) {
       // New or modified resource
-      const data = dataMatch[1];
+      let data = dataMatch[1];
+      if (data.startsWith('<![CDATA[')) data = data.substring(9, data.length - 3);
       const event = parseEvent(data, calendar.displayName);
       if (event) {
         objects.events[event.uid] = event;

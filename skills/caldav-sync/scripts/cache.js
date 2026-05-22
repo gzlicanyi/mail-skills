@@ -62,6 +62,36 @@ function getCalendarUid(calendar) {
   return calendar.url || 'unknown';
 }
 
+function upsertCachedEvent(account, calendarUid, event) {
+  const objects = loadObjects(account, calendarUid);
+  if (!objects) return; // no cache yet, will be built on next sync
+  objects.events = objects.events || {};
+  objects.events[event.uid] = event;
+  saveObjects(account, calendarUid, objects);
+}
+
+function upsertCachedTodo(account, calendarUid, todo) {
+  const objects = loadObjects(account, calendarUid);
+  if (!objects) return;
+  objects.todos = objects.todos || {};
+  objects.todos[todo.uid] = todo;
+  saveObjects(account, calendarUid, objects);
+}
+
+function deleteCachedObject(account, calendarUid, uid) {
+  const objects = loadObjects(account, calendarUid);
+  if (!objects) return;
+  delete (objects.events || {})[uid];
+  delete (objects.todos || {})[uid];
+  // Clean urlMap entries pointing to this uid
+  if (objects.urlMap) {
+    for (const [url, mappedUid] of Object.entries(objects.urlMap)) {
+      if (mappedUid === uid) delete objects.urlMap[url];
+    }
+  }
+  saveObjects(account, calendarUid, objects);
+}
+
 module.exports = {
   getCacheDir,
   loadSyncState,
@@ -70,4 +100,7 @@ module.exports = {
   saveObjects,
   clearCache,
   getCalendarUid,
+  upsertCachedEvent,
+  upsertCachedTodo,
+  deleteCachedObject,
 };
