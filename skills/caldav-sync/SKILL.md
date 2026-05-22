@@ -100,7 +100,7 @@ node scripts/caldav.js [--account <name>] list-calendars
 Query events in a time range.
 
 ```bash
-node scripts/caldav.js [--account <name>] list-events --start <date> --end <date> [--calendar <id>]
+node scripts/caldav.js [--account <name>] list-events --start <date> --end <date> [--calendar <id>] [--force-refresh]
 ```
 
 ### get-event
@@ -142,7 +142,7 @@ node scripts/caldav.js [--account <name>] delete-event --uid <uid> [--calendar <
 List all todos/tasks.
 
 ```bash
-node scripts/caldav.js [--account <name>] list-todos [--status <all|pending|completed>] [--calendar <id>]
+node scripts/caldav.js [--account <name>] list-todos [--status <all|pending|completed>] [--calendar <id>] [--force-refresh]
 ```
 
 ### create-todo
@@ -185,6 +185,23 @@ List all configured CalDAV accounts.
 
 ```bash
 node scripts/caldav.js list-accounts
+```
+
+### Incremental Sync
+
+`list-events` and `list-todos` automatically use incremental sync when available:
+
+1. **sync-token** — only fetches changed resources (preferred)
+2. **ctag + etag** — compares calendar tag and resource tags to fetch only changes
+3. **full** — fetches all resources (fallback)
+
+Sync state is cached at `~/.config/mail-skills/caldav-cache/` per account and calendar. Write operations (create/update/delete) automatically invalidate the cache.
+
+Use `--force-refresh` to bypass the cache and force a full sync:
+
+```bash
+node scripts/caldav.js list-events --start 2026-01-01 --end 2026-12-31 --force-refresh
+node scripts/caldav.js list-todos --force-refresh
 ```
 
 ## Security Notes
