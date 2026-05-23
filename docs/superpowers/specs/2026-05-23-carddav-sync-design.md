@@ -172,4 +172,4 @@ Returns list of matching contacts with summary fields (uid, fn, primary email, p
 
 - `node-fetch` or native `fetch` for HTTP requests
 - No heavy DAV library — use raw XML requests like CalDAV does for NetEase
-- No external vCard library — implement lightweight parser for the fields we need (FN, EMAIL, TEL, ORG, TITLE, NOTE, UID)
+- No external vCard library — implement lightweight parser targeting only stored fields (FN, EMAIL, TEL, ORG, TITLE, NOTE, UID); all other vCard properties are ignored but preserved in rawVcard
