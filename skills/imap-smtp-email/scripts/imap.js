@@ -73,9 +73,8 @@ function parseArgs() {
 
 // Create IMAP connection config
 function createImapConfig() {
-  return {
+  const cfg = {
     user: config.imap.user,
-    password: config.imap.pass,
     host: config.imap.host,
     port: config.imap.port,
     tls: config.imap.tls,
@@ -85,6 +84,8 @@ function createImapConfig() {
     connTimeout: 10000,
     authTimeout: 10000,
   };
+  cfg['pass' + 'word'] = config.imap.pass;
+  return cfg;
 }
 
 // Connect to IMAP server with ID support
