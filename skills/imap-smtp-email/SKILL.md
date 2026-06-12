@@ -201,6 +201,8 @@ Options:
   --before <date>    Before date (YYYY-MM-DD)
   --limit <n>        Max results (default: 20)
   --mailbox <name>   Mailbox to search (default: INBOX)
+  --sort <mode>      uid (default, fast) or date (strict INTERNALDATE sort;
+                     fetches all matches, use when mailbox has COPY'd/backdated mail)
 ```
 
 ### mark-read / mark-unread

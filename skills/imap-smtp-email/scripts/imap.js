@@ -288,14 +288,17 @@ async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = n
     const allUids = await searchUids(imap, searchCriteria);
     if (allUids.length === 0) return [];
 
-    const fetchUids = allUids.slice(-limit).reverse();
+    const fetchUids = allUids.slice(-limit);
 
     const fetchOptions = {
       bodies: [''],
       markSeen: false,
     };
 
-    const messages = await fetchByUids(imap, fetchUids, fetchOptions);
+    // imap.fetch returns messages in UID-ascending order regardless of input
+    // array order, so reversing the input had no effect; reverse the output
+    // to actually get newest-first.
+    const messages = (await fetchByUids(imap, fetchUids, fetchOptions)).reverse();
 
     const results = [];
 
@@ -306,6 +309,7 @@ async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = n
       results.push({
         uid: item.attributes.uid,
         ...parsed,
+        date: item.attributes.date, // INTERNALDATE, matches what users expect "newest" to mean
         flags: item.attributes.flags,
       });
     }
@@ -341,6 +345,7 @@ async function fetchEmail(uid, mailbox = DEFAULT_MAILBOX) {
     return {
       uid: item.attributes.uid,
       ...parsed,
+      date: item.attributes.date, // INTERNALDATE
       flags: item.attributes.flags,
     };
   } finally {
@@ -455,6 +460,9 @@ async function searchEmails(options) {
 
     const criteria = [];
 
+    if (options.unseen && options.seen) {
+      throw new Error('--unseen and --seen cannot be used together');
+    }
     if (options.unseen) criteria.push('UNSEEN');
     if (options.seen) criteria.push('SEEN');
     if (options.from) criteria.push(['FROM', options.from]);
@@ -473,31 +481,49 @@ async function searchEmails(options) {
     // Default to all if no criteria
     if (criteria.length === 0) criteria.push('ALL');
 
-    const fetchOptions = {
-      bodies: [''],
-      markSeen: false,
-    };
-
-    const messages = await searchMessages(imap, criteria, fetchOptions);
     const limit = parseInt(options.limit) || 20;
-    const results = [];
+    const fetchOptions = { bodies: [''], markSeen: false };
 
-    // Sort by date (newest first)
+    // Default UID-slice: fast, correct when UID order matches INTERNALDATE
+    // order (true for SMTP-received mail). Use --sort date for strict
+    // INTERNALDATE ordering when the mailbox may contain COPY'd or
+    // backdated messages; that path fetches all matching bodies.
+    if (options.sort !== 'date') {
+      const allUids = await searchUids(imap, criteria);
+      if (allUids.length === 0) return [];
+      const fetchUids = allUids.slice(-limit);
+      const messages = (await fetchByUids(imap, fetchUids, fetchOptions)).reverse();
+      const results = [];
+      for (const item of messages) {
+        const parsed = await parseEmail(item.body);
+        results.push({
+          uid: item.attributes.uid,
+          ...parsed,
+          date: item.attributes.date,
+          flags: item.attributes.flags,
+        });
+      }
+      return results;
+    }
+
+    // --sort date: fetch all matching, sort by INTERNALDATE desc, slice.
+    const messages = await searchMessages(imap, criteria, fetchOptions);
     const sortedMessages = messages.sort((a, b) => {
       const dateA = a.attributes.date ? new Date(a.attributes.date) : new Date(0);
       const dateB = b.attributes.date ? new Date(b.attributes.date) : new Date(0);
       return dateB - dateA;
     }).slice(0, limit);
 
+    const results = [];
     for (const item of sortedMessages) {
       const parsed = await parseEmail(item.body);
       results.push({
         uid: item.attributes.uid,
         ...parsed,
+        date: item.attributes.date,
         flags: item.attributes.flags,
       });
     }
-
     return results;
   } finally {
     imap.end();
@@ -636,7 +662,7 @@ async function main() {
           options.mailbox || DEFAULT_MAILBOX,
           parseInt(options.limit) || 10,
           options.recent || null,
-          options.unseen === 'true' // if --unseen is set, only get unread messages
+          !!options.unseen // bare flag (--unseen) or explicit value (--unseen true)
         );
         break;
 
