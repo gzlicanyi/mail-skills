@@ -165,6 +165,7 @@ Options:
 - `--limit <n>`: Max results (default: 10)
 - `--mailbox <name>`: Mailbox to check (default: INBOX)
 - `--recent <time>`: Only show emails from last X time (e.g., 30m, 2h, 7d)
+- `--unseen`: Only show unread messages
 
 ### fetch
 Fetch full email content by UID.

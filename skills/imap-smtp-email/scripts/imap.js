@@ -253,7 +253,7 @@ async function parseEmail(bodyStr, includeAttachments = false) {
     from: parsed.from?.text || 'Unknown',
     to: parsed.to?.text,
     subject: parsed.subject || '(no subject)',
-    date: parsed.date,
+    headerDate: parsed.date, // sender's Date header (may be backdated/forged)
     text: parsed.text,
     html: parsed.html,
     snippet: parsed.text
