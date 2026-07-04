@@ -226,7 +226,9 @@ function scanSharedAccounts(env) {
           email: env[`${p}USERNAME`] || '-',
           imapHost: (preset && preset.imap) ? preset.imap.host : (env[`${p}IMAP_HOST`] || '-'),
           smtpHost: (preset && preset.smtp) ? preset.smtp.host : (env[`${p}SMTP_HOST`] || '-'),
-          isComplete: !!(env[`${p}USERNAME`] && env[`${p}PASSWORD`] && preset?.imap),
+          isComplete: env[`${p}PROVIDER`] === 'custom'
+            ? !!(env[`${p}USERNAME`] && env[`${p}PASSWORD`] && env[`${p}IMAP_HOST`] && env[`${p}SMTP_HOST`])
+            : !!(env[`${p}USERNAME`] && env[`${p}PASSWORD`] && preset?.imap && preset?.smtp),
         });
         seen.add(name);
       }
