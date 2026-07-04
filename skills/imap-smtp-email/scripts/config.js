@@ -206,7 +206,9 @@ function scanSharedAccounts(env) {
       email: env.USERNAME || '-',
       imapHost: (preset && preset.imap) ? preset.imap.host : (env.IMAP_HOST || '-'),
       smtpHost: (preset && preset.smtp) ? preset.smtp.host : (env.SMTP_HOST || '-'),
-      isComplete: !!(env.USERNAME && env.PASSWORD && preset?.imap),
+      isComplete: env.PROVIDER === 'custom'
+        ? !!(env.USERNAME && env.PASSWORD && env.IMAP_HOST && env.SMTP_HOST)
+        : !!(env.USERNAME && env.PASSWORD && preset?.imap && preset?.smtp),
     });
     seen.add('default');
   }
