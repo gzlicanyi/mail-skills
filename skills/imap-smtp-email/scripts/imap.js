@@ -579,7 +579,9 @@ async function searchEmailsLocal(options, imap, mailbox) {
   if (options.unseen) serverCriteria.push('UNSEEN');
   if (options.seen) serverCriteria.push('SEEN');
   let scopeDesc;
-  const hasDateScope = options.recent || options.since || options.before;
+  // Any server-side scope (date OR seen/unseen flag) shrinks the UID set, so
+  // the 200-cap only applies to a truly bare text search (no scope at all).
+  const hasScope = options.recent || options.since || options.before || options.seen || options.unseen;
   if (options.recent) {
     serverCriteria.push(['SINCE', parseRelativeTime(options.recent)]);
     scopeDesc = `recent:${options.recent}`;
@@ -590,6 +592,10 @@ async function searchEmailsLocal(options, imap, mailbox) {
       ? [options.since && `since:${options.since}`, options.before && `before:${options.before}`].filter(Boolean).join(' ')
       : null;
   }
+  if (!scopeDesc) {
+    if (options.unseen) scopeDesc = 'unseen';
+    else if (options.seen) scopeDesc = 'seen';
+  }
   if (serverCriteria.length === 0) serverCriteria.push('ALL');
 
   const limit = parseInt(options.limit) || 20;
@@ -598,7 +604,7 @@ async function searchEmailsLocal(options, imap, mailbox) {
 
   // Bare text search (no date/flag scope): cap to most recent N to bound cost.
   let truncated = false;
-  if (!hasDateScope && allUids.length > LOCAL_SCAN_CAP) {
+  if (!hasScope && allUids.length > LOCAL_SCAN_CAP) {
     allUids = allUids.slice(-LOCAL_SCAN_CAP);
     truncated = true;
   }
