@@ -560,9 +560,109 @@ async function searchEmails(options) {
   }
 }
 
-// Temporary stub — replaced by full implementation in Task 3.
+// Local (client-side) text search for providers whose IMAP server silently
+// returns empty for text SEARCH. Server criteria keep only date/flag terms
+// (which work); --from/--subject are filtered client-side after FETCH.
+//
+// Caller passes an already-connected+opened imap and the mailbox name, so this
+// does not manage the connection (searchEmails owns connect/finally-end).
 async function searchEmailsLocal(options, imap, mailbox) {
-  throw new Error('searchEmailsLocal not implemented yet');
+  const textCriteria = {};
+  if (options.from) textCriteria.from = options.from;
+  if (options.subject) textCriteria.subject = options.subject;
+
+  // Server-side criteria: only non-text terms (date/flag). Text terms excluded.
+  const serverCriteria = [];
+  if (options.unseen && options.seen) {
+    throw new Error('--unseen and --seen cannot be used together');
+  }
+  if (options.unseen) serverCriteria.push('UNSEEN');
+  if (options.seen) serverCriteria.push('SEEN');
+  let scopeDesc;
+  const hasDateScope = options.recent || options.since || options.before;
+  if (options.recent) {
+    serverCriteria.push(['SINCE', parseRelativeTime(options.recent)]);
+    scopeDesc = `recent:${options.recent}`;
+  } else {
+    if (options.since) serverCriteria.push(['SINCE', options.since]);
+    if (options.before) serverCriteria.push(['BEFORE', options.before]);
+    scopeDesc = options.since || options.before
+      ? [options.since && `since:${options.since}`, options.before && `before:${options.before}`].filter(Boolean).join(' ')
+      : null;
+  }
+  if (serverCriteria.length === 0) serverCriteria.push('ALL');
+
+  const limit = parseInt(options.limit) || 20;
+  const LOCAL_SCAN_CAP = 200;
+  let allUids = await searchUids(imap, serverCriteria);
+
+  // Bare text search (no date/flag scope): cap to most recent N to bound cost.
+  let truncated = false;
+  if (!hasDateScope && allUids.length > LOCAL_SCAN_CAP) {
+    allUids = allUids.slice(-LOCAL_SCAN_CAP);
+    truncated = true;
+  }
+  scopeDesc = scopeDesc || (truncated ? `all(last ${LOCAL_SCAN_CAP})` : 'all');
+
+  const scanned = allUids.length;
+  if (scanned === 0) {
+    return {
+      results: [],
+      meta: {
+        fallbackUsed: true,
+        provider: detectProvider(config.imap.host),
+        scope: scopeDesc,
+        scanned: 0,
+        matched: 0,
+        returned: 0,
+        truncated,
+        note: truncated
+          ? `仅扫描了最近 ${LOCAL_SCAN_CAP} 封,如需搜索更早邮件请加 --recent/--since 缩小范围`
+          : undefined,
+      },
+    };
+  }
+
+  const fetchOptions = { bodies: [''], markSeen: false };
+  const messages = await fetchByUids(imap, allUids, fetchOptions);
+
+  // Parse + client-side filter, track matched (pre-slice) count.
+  const matched = [];
+  for (const item of messages) {
+    const parsed = await parseEmail(item.body);
+    if (matchesTextCriteria(parsed, textCriteria)) {
+      matched.push({
+        uid: item.attributes.uid,
+        ...parsed,
+        date: item.attributes.date, // INTERNALDATE
+        flags: item.attributes.flags,
+      });
+    }
+  }
+
+  // Sort by INTERNALDATE desc (equivalent to --sort date), then slice(limit).
+  matched.sort((a, b) => {
+    const da = a.date ? new Date(a.date) : new Date(0);
+    const db = b.date ? new Date(b.date) : new Date(0);
+    return db - da;
+  });
+  const results = matched.slice(0, limit);
+
+  return {
+    results,
+    meta: {
+      fallbackUsed: true,
+      provider: detectProvider(config.imap.host),
+      scope: scopeDesc,
+      scanned,
+      matched: matched.length,
+      returned: results.length,
+      truncated,
+      note: truncated
+        ? `仅扫描了最近 ${LOCAL_SCAN_CAP} 封,如需搜索更早邮件请加 --recent/--since 缩小范围`
+        : undefined,
+    },
+  };
 }
 
 // Mark message(s) as read
