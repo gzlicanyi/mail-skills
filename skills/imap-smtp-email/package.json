@@ -6,7 +6,8 @@
   "scripts": {
     "check": "node scripts/imap.js check",
     "fetch": "node scripts/imap.js fetch",
-    "search": "node scripts/imap.js search"
+    "search": "node scripts/imap.js search",
+    "test": "node scripts/test-search-filter.js"
   },
   "dependencies": {
     "dotenv": "^16.6.1",

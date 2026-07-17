@@ -269,6 +269,13 @@ async function parseEmail(bodyStr, includeAttachments = false) {
   };
 }
 
+// Client-side text filter for providers whose IMAP server silently returns
+// empty for text SEARCH (FROM/SUBJECT/TEXT/HEADER). Case-insensitive substring.
+// `parsed` is a parseEmail() result (from is a string like "Name <addr>",
+// subject is a string). from matches the whole from-string (covers display
+// name and address); both given => AND.
+const { matchesTextCriteria } = require('./search-filter');
+
 // Check for new/unread emails
 async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = null, unreadOnly = false) {
   const imap = await connect();
@@ -723,4 +730,5 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) { main(); }
+module.exports = { matchesTextCriteria };
