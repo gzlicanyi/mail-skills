@@ -12,6 +12,23 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const config = require('./config');
+const { detectProvider } = require('./providers');
+
+// Providers whose IMAP server silently returns empty (OK SEARCH completed,
+// no UIDs) for text-based SEARCH (FROM/SUBJECT/TEXT/HEADER). Text criteria
+// for these are filtered client-side after FETCH. Netease personal mail only;
+// enterprise (imap.qiye.163.com) is NOT included (unverified).
+const LOCAL_TEXT_SEARCH_PROVIDERS = [
+  '163', 'vip.163', '126', 'vip.126', '188', 'vip.188', 'yeah',
+];
+
+// True when the current account's provider is known to need client-side text
+// search. Decided by reverse-looking up config.imap.host via detectProvider;
+// custom providers whose host matches a known netease host are covered too.
+function useLocalTextSearch() {
+  const provider = detectProvider(config.imap.host);
+  return LOCAL_TEXT_SEARCH_PROVIDERS.includes(provider);
+}
 
 function validateWritePath(dirPath) {
   if (!config.allowedWriteDirs.length) {
@@ -465,6 +482,12 @@ async function searchEmails(options) {
     const mailbox = options.mailbox || DEFAULT_MAILBOX;
     await openBox(imap, mailbox);
 
+    // Netease-like providers silently return empty for text SEARCH; route
+    // --from/--subject to client-side filtering instead.
+    if (useLocalTextSearch() && (options.from || options.subject)) {
+      return searchEmailsLocal(options, imap, mailbox);
+    }
+
     const criteria = [];
 
     if (options.unseen && options.seen) {
@@ -535,6 +558,11 @@ async function searchEmails(options) {
   } finally {
     imap.end();
   }
+}
+
+// Temporary stub — replaced by full implementation in Task 3.
+async function searchEmailsLocal(options, imap, mailbox) {
+  throw new Error('searchEmailsLocal not implemented yet');
 }
 
 // Mark message(s) as read
