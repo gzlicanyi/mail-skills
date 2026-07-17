@@ -30,6 +30,28 @@ function useLocalTextSearch() {
   return LOCAL_TEXT_SEARCH_PROVIDERS.includes(provider);
 }
 
+// Human-readable description of the server-side scope actually applied, for
+// the non-netease searchEmails paths' meta.scope.
+function describeServerScope(options) {
+  const parts = [];
+  if (options.unseen) parts.push('unseen');
+  if (options.seen) parts.push('seen');
+  if (options.recent) parts.push(`recent:${options.recent}`);
+  if (options.since) parts.push(`since:${options.since}`);
+  if (options.before) parts.push(`before:${options.before}`);
+  if (options.from) parts.push(`from:${options.from}`);
+  if (options.subject) parts.push(`subject:${options.subject}`);
+  return parts.length ? parts.join(' ') : 'all';
+}
+
+// Scope description for checkEmails meta.
+function describeCheckScope(unreadOnly, recentTime) {
+  const parts = [];
+  if (unreadOnly) parts.push('unseen'); else parts.push('all');
+  if (recentTime) parts.push(`recent:${recentTime}`);
+  return parts.join(' ');
+}
+
 function validateWritePath(dirPath) {
   if (!config.allowedWriteDirs.length) {
     throw new Error('ALLOWED_WRITE_DIRS not set in .env. Attachment download is disabled.');
@@ -310,7 +332,21 @@ async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = n
 
     // Search returns UIDs in ascending order; take only the last `limit`
     const allUids = await searchUids(imap, searchCriteria);
-    if (allUids.length === 0) return [];
+    if (allUids.length === 0) {
+      return {
+        results: [],
+        meta: {
+          fallbackUsed: false,
+          provider: detectProvider(config.imap.host),
+          scope: describeCheckScope(unreadOnly, recentTime),
+          scanned: null,
+          matched: null,
+          returned: 0,
+          truncated: false,
+          note: undefined,
+        },
+      };
+    }
 
     const fetchUids = allUids.slice(-limit);
 
@@ -338,7 +374,19 @@ async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = n
       });
     }
 
-    return results;
+    return {
+      results,
+      meta: {
+        fallbackUsed: false,
+        provider: detectProvider(config.imap.host),
+        scope: describeCheckScope(unreadOnly, recentTime),
+        scanned: null,
+        matched: null,
+        returned: results.length,
+        truncated: false,
+        note: undefined,
+      },
+    };
   } finally {
     imap.end();
   }
@@ -520,7 +568,21 @@ async function searchEmails(options) {
     // backdated messages; that path fetches all matching bodies.
     if (options.sort !== 'date') {
       const allUids = await searchUids(imap, criteria);
-      if (allUids.length === 0) return [];
+      if (allUids.length === 0) {
+        return {
+          results: [],
+          meta: {
+            fallbackUsed: false,
+            provider: detectProvider(config.imap.host),
+            scope: describeServerScope(options),
+            scanned: null,
+            matched: null,
+            returned: 0,
+            truncated: false,
+            note: undefined,
+          },
+        };
+      }
       const fetchUids = allUids.slice(-limit);
       const messages = (await fetchByUids(imap, fetchUids, fetchOptions)).reverse();
       const results = [];
@@ -533,7 +595,19 @@ async function searchEmails(options) {
           flags: item.attributes.flags,
         });
       }
-      return results;
+      return {
+        results,
+        meta: {
+          fallbackUsed: false,
+          provider: detectProvider(config.imap.host),
+          scope: describeServerScope(options),
+          scanned: null,
+          matched: null,
+          returned: results.length,
+          truncated: false,
+          note: undefined,
+        },
+      };
     }
 
     // --sort date: fetch all matching, sort by INTERNALDATE desc, slice.
@@ -554,7 +628,19 @@ async function searchEmails(options) {
         flags: item.attributes.flags,
       });
     }
-    return results;
+    return {
+      results,
+      meta: {
+        fallbackUsed: false,
+        provider: detectProvider(config.imap.host),
+        scope: describeServerScope(options),
+        scanned: null,
+        matched: null,
+        returned: results.length,
+        truncated: false,
+        note: undefined,
+      },
+    };
   } finally {
     imap.end();
   }
