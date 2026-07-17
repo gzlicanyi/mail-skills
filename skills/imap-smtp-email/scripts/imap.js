@@ -533,7 +533,7 @@ async function searchEmails(options) {
     // Netease-like providers silently return empty for text SEARCH; route
     // --from/--subject to client-side filtering instead.
     if (useLocalTextSearch() && (options.from || options.subject)) {
-      return searchEmailsLocal(options, imap, mailbox);
+      return await searchEmailsLocal(options, imap, mailbox);
     }
 
     const criteria = [];
