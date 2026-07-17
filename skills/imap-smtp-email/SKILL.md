@@ -210,8 +210,8 @@ Options:
 ```
 
 Output is an object: `{ "results": [...], "meta": {...} }` where `results` is
-an array of message objects and `meta` carries `fallbackUsed`, `scope`,
-`scanned`, `matched`, `returned`, `truncated`, and optional `note`.
+an array of message objects and `meta` carries `fallbackUsed`, `provider`,
+`scope`, `scanned`, `matched`, `returned`, `truncated`, and optional `note`.
 
 For 163/126/188/yeah.net (NetEase) accounts, the IMAP server silently returns
 empty for text-based SEARCH (`--from`/`--subject`). These are automatically
