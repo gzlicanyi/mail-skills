@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Pure-logic unit tests for matchesTextCriteria. No IMAP, no network.
-// Run: node scripts/test-search-filter.js
+// Lives OUTSIDE the skill dir so it is not packaged with the skill
+// (skills/ is the runtime dir shipped to users via `skills add`).
+// Run: node tests/imap-smtp-email/search-filter.test.js
 const assert = require('assert');
 
 // matchesTextCriteria is exported from search-filter.js, a pure module with no
 // IMAP/config dependencies so it can be tested without email configuration.
-const { matchesTextCriteria } = require('./search-filter');
+const { matchesTextCriteria } = require('../../skills/imap-smtp-email/scripts/search-filter');
 
 let passed = 0;
 function check(name, fn) {
