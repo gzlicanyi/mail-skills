@@ -12,6 +12,45 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const config = require('./config');
+const { detectProvider } = require('./providers');
+
+// Providers whose IMAP server silently returns empty (OK SEARCH completed,
+// no UIDs) for text-based SEARCH (FROM/SUBJECT/TEXT/HEADER). Text criteria
+// for these are filtered client-side after FETCH. Netease personal mail only;
+// enterprise (imap.qiye.163.com) is NOT included (unverified).
+const LOCAL_TEXT_SEARCH_PROVIDERS = [
+  '163', 'vip.163', '126', 'vip.126', '188', 'vip.188', 'yeah',
+];
+
+// True when the current account's provider is known to need client-side text
+// search. Decided by reverse-looking up config.imap.host via detectProvider;
+// custom providers whose host matches a known netease host are covered too.
+function useLocalTextSearch() {
+  const provider = detectProvider(config.imap.host);
+  return LOCAL_TEXT_SEARCH_PROVIDERS.includes(provider);
+}
+
+// Human-readable description of the server-side scope actually applied, for
+// the non-netease searchEmails paths' meta.scope.
+function describeServerScope(options) {
+  const parts = [];
+  if (options.unseen) parts.push('unseen');
+  if (options.seen) parts.push('seen');
+  if (options.recent) parts.push(`recent:${options.recent}`);
+  if (options.since) parts.push(`since:${options.since}`);
+  if (options.before) parts.push(`before:${options.before}`);
+  if (options.from) parts.push(`from:${options.from}`);
+  if (options.subject) parts.push(`subject:${options.subject}`);
+  return parts.length ? parts.join(' ') : 'all';
+}
+
+// Scope description for checkEmails meta.
+function describeCheckScope(unreadOnly, recentTime) {
+  const parts = [];
+  if (unreadOnly) parts.push('unseen'); else parts.push('all');
+  if (recentTime) parts.push(`recent:${recentTime}`);
+  return parts.join(' ');
+}
 
 function validateWritePath(dirPath) {
   if (!config.allowedWriteDirs.length) {
@@ -269,6 +308,13 @@ async function parseEmail(bodyStr, includeAttachments = false) {
   };
 }
 
+// Client-side text filter for providers whose IMAP server silently returns
+// empty for text SEARCH (FROM/SUBJECT/TEXT/HEADER). Case-insensitive substring.
+// `parsed` is a parseEmail() result (from is a string like "Name <addr>",
+// subject is a string). from matches the whole from-string (covers display
+// name and address); both given => AND.
+const { matchesTextCriteria } = require('./search-filter');
+
 // Check for new/unread emails
 async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = null, unreadOnly = false) {
   const imap = await connect();
@@ -286,7 +332,21 @@ async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = n
 
     // Search returns UIDs in ascending order; take only the last `limit`
     const allUids = await searchUids(imap, searchCriteria);
-    if (allUids.length === 0) return [];
+    if (allUids.length === 0) {
+      return {
+        results: [],
+        meta: {
+          fallbackUsed: false,
+          provider: detectProvider(config.imap.host),
+          scope: describeCheckScope(unreadOnly, recentTime),
+          scanned: null,
+          matched: null,
+          returned: 0,
+          truncated: false,
+          note: undefined,
+        },
+      };
+    }
 
     const fetchUids = allUids.slice(-limit);
 
@@ -314,7 +374,19 @@ async function checkEmails(mailbox = DEFAULT_MAILBOX, limit = 10, recentTime = n
       });
     }
 
-    return results;
+    return {
+      results,
+      meta: {
+        fallbackUsed: false,
+        provider: detectProvider(config.imap.host),
+        scope: describeCheckScope(unreadOnly, recentTime),
+        scanned: null,
+        matched: null,
+        returned: results.length,
+        truncated: false,
+        note: undefined,
+      },
+    };
   } finally {
     imap.end();
   }
@@ -458,6 +530,12 @@ async function searchEmails(options) {
     const mailbox = options.mailbox || DEFAULT_MAILBOX;
     await openBox(imap, mailbox);
 
+    // Netease-like providers silently return empty for text SEARCH; route
+    // --from/--subject to client-side filtering instead.
+    if (useLocalTextSearch() && (options.from || options.subject)) {
+      return await searchEmailsLocal(options, imap, mailbox);
+    }
+
     const criteria = [];
 
     if (options.unseen && options.seen) {
@@ -490,7 +568,21 @@ async function searchEmails(options) {
     // backdated messages; that path fetches all matching bodies.
     if (options.sort !== 'date') {
       const allUids = await searchUids(imap, criteria);
-      if (allUids.length === 0) return [];
+      if (allUids.length === 0) {
+        return {
+          results: [],
+          meta: {
+            fallbackUsed: false,
+            provider: detectProvider(config.imap.host),
+            scope: describeServerScope(options),
+            scanned: null,
+            matched: null,
+            returned: 0,
+            truncated: false,
+            note: undefined,
+          },
+        };
+      }
       const fetchUids = allUids.slice(-limit);
       const messages = (await fetchByUids(imap, fetchUids, fetchOptions)).reverse();
       const results = [];
@@ -503,7 +595,19 @@ async function searchEmails(options) {
           flags: item.attributes.flags,
         });
       }
-      return results;
+      return {
+        results,
+        meta: {
+          fallbackUsed: false,
+          provider: detectProvider(config.imap.host),
+          scope: describeServerScope(options),
+          scanned: null,
+          matched: null,
+          returned: results.length,
+          truncated: false,
+          note: undefined,
+        },
+      };
     }
 
     // --sort date: fetch all matching, sort by INTERNALDATE desc, slice.
@@ -524,10 +628,133 @@ async function searchEmails(options) {
         flags: item.attributes.flags,
       });
     }
-    return results;
+    return {
+      results,
+      meta: {
+        fallbackUsed: false,
+        provider: detectProvider(config.imap.host),
+        scope: describeServerScope(options),
+        scanned: null,
+        matched: null,
+        returned: results.length,
+        truncated: false,
+        note: undefined,
+      },
+    };
   } finally {
     imap.end();
   }
+}
+
+// Local (client-side) text search for providers whose IMAP server silently
+// returns empty for text SEARCH. Server criteria keep only date/flag terms
+// (which work); --from/--subject are filtered client-side after FETCH.
+//
+// Caller passes an already-connected+opened imap and the mailbox name, so this
+// does not manage the connection (searchEmails owns connect/finally-end).
+async function searchEmailsLocal(options, imap, mailbox) {
+  const textCriteria = {};
+  if (options.from) textCriteria.from = options.from;
+  if (options.subject) textCriteria.subject = options.subject;
+
+  // Server-side criteria: only non-text terms (date/flag). Text terms excluded.
+  const serverCriteria = [];
+  if (options.unseen && options.seen) {
+    throw new Error('--unseen and --seen cannot be used together');
+  }
+  if (options.unseen) serverCriteria.push('UNSEEN');
+  if (options.seen) serverCriteria.push('SEEN');
+  let scopeDesc;
+  // Any server-side scope (date OR seen/unseen flag) shrinks the UID set, so
+  // the 200-cap only applies to a truly bare text search (no scope at all).
+  const hasScope = options.recent || options.since || options.before || options.seen || options.unseen;
+  if (options.recent) {
+    serverCriteria.push(['SINCE', parseRelativeTime(options.recent)]);
+    scopeDesc = `recent:${options.recent}`;
+  } else {
+    if (options.since) serverCriteria.push(['SINCE', options.since]);
+    if (options.before) serverCriteria.push(['BEFORE', options.before]);
+    scopeDesc = options.since || options.before
+      ? [options.since && `since:${options.since}`, options.before && `before:${options.before}`].filter(Boolean).join(' ')
+      : null;
+  }
+  if (!scopeDesc) {
+    if (options.unseen) scopeDesc = 'unseen';
+    else if (options.seen) scopeDesc = 'seen';
+  }
+  if (serverCriteria.length === 0) serverCriteria.push('ALL');
+
+  const limit = parseInt(options.limit) || 20;
+  const LOCAL_SCAN_CAP = 200;
+  let allUids = await searchUids(imap, serverCriteria);
+
+  // Bare text search (no date/flag scope): cap to most recent N to bound cost.
+  let truncated = false;
+  if (!hasScope && allUids.length > LOCAL_SCAN_CAP) {
+    allUids = allUids.slice(-LOCAL_SCAN_CAP);
+    truncated = true;
+  }
+  scopeDesc = scopeDesc || (truncated ? `all(last ${LOCAL_SCAN_CAP})` : 'all');
+
+  const scanned = allUids.length;
+  if (scanned === 0) {
+    return {
+      results: [],
+      meta: {
+        fallbackUsed: true,
+        provider: detectProvider(config.imap.host),
+        scope: scopeDesc,
+        scanned: 0,
+        matched: 0,
+        returned: 0,
+        truncated,
+        note: truncated
+          ? `仅扫描了最近 ${LOCAL_SCAN_CAP} 封,如需搜索更早邮件请加 --recent/--since 缩小范围`
+          : undefined,
+      },
+    };
+  }
+
+  const fetchOptions = { bodies: [''], markSeen: false };
+  const messages = await fetchByUids(imap, allUids, fetchOptions);
+
+  // Parse + client-side filter, track matched (pre-slice) count.
+  const matched = [];
+  for (const item of messages) {
+    const parsed = await parseEmail(item.body);
+    if (matchesTextCriteria(parsed, textCriteria)) {
+      matched.push({
+        uid: item.attributes.uid,
+        ...parsed,
+        date: item.attributes.date, // INTERNALDATE
+        flags: item.attributes.flags,
+      });
+    }
+  }
+
+  // Sort by INTERNALDATE desc (equivalent to --sort date), then slice(limit).
+  matched.sort((a, b) => {
+    const da = a.date ? new Date(a.date) : new Date(0);
+    const db = b.date ? new Date(b.date) : new Date(0);
+    return db - da;
+  });
+  const results = matched.slice(0, limit);
+
+  return {
+    results,
+    meta: {
+      fallbackUsed: true,
+      provider: detectProvider(config.imap.host),
+      scope: scopeDesc,
+      scanned,
+      matched: matched.length,
+      returned: results.length,
+      truncated,
+      note: truncated
+        ? `仅扫描了最近 ${LOCAL_SCAN_CAP} 封,如需搜索更早邮件请加 --recent/--since 缩小范围`
+        : undefined,
+    },
+  };
 }
 
 // Mark message(s) as read
@@ -723,4 +950,5 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) { main(); }
+module.exports = { matchesTextCriteria };

@@ -167,6 +167,9 @@ Options:
 - `--recent <time>`: Only show emails from last X time (e.g., 30m, 2h, 7d)
 - `--unseen`: Only show unread messages
 
+Output is an object: `{ "results": [...], "meta": {...} }` (same shape as
+`search`; `meta.fallbackUsed` is always `false` for `check`).
+
 ### fetch
 Fetch full email content by UID.
 
@@ -205,6 +208,17 @@ Options:
   --sort <mode>      uid (default, fast) or date (strict INTERNALDATE sort;
                      fetches all matches, use when mailbox has COPY'd/backdated mail)
 ```
+
+Output is an object: `{ "results": [...], "meta": {...} }` where `results` is
+an array of message objects and `meta` carries `fallbackUsed`, `provider`,
+`scope`, `scanned`, `matched`, `returned`, `truncated`, and optional `note`.
+
+For 163/126/188/yeah.net (NetEase) accounts, the IMAP server silently returns
+empty for text-based SEARCH (`--from`/`--subject`). These are automatically
+filtered client-side: server-side SEARCH keeps only date/flag criteria, then
+fetched messages are filtered locally. When searching `--from`/`--subject`
+without a date/flag scope, only the most recent 200 messages are scanned
+(`meta.truncated=true`) — add `--recent`/`--since` to search a wider range.
 
 ### mark-read / mark-unread
 Mark message(s) as read or unread.
