@@ -48,7 +48,14 @@ logs/
 credentials.json
 *.secret
 *.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+secrets/
 
 /.claude/
 **/node_modules/
 docs/superpowers/
+.superpowers/
+.worktrees/

@@ -1,0 +1,26 @@
+# Pre-commit hooks for the mail-skills repo.
+# Install once per clone:  pre-commit install
+# Run manually on all files: pre-commit run --all-files
+# Update hook versions:     pre-commit autoupdate
+repos:
+  # Core secret scanner — blocks new credentials from entering the repo.
+  # Uses a baseline (.secrets.baseline) so pre-existing secrets are not flagged;
+  # only newly-introduced secrets trip the hook.
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        # Avoid the hook scanning its own baseline file.
+        exclude: '^\.secrets\.baseline$'
+
+  # Lightweight hygiene hooks that only check (never modify) files.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: check-yaml
+        # YAML frontmatter in docs/skills can be exotic; stay safe.
+        args: ['--allow-multiple-documents']
