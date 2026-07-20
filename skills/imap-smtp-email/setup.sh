@@ -52,10 +52,13 @@ if [ "$MIGRATE" = true ]; then
   # NEVER use shell source or evaluate the legacy file — it is untrusted config text.
   mkdir -p -m 700 "$SHARED_CONFIG_DIR"
 
-  if ! node "$SKILL_DIR/scripts/migrate-legacy-config.js" "$LEGACY_CONFIG_FILE" > "$SHARED_CONFIG_FILE"; then
-    echo "Migration failed. Your legacy config is untouched."
+  TEMP_FILE=$(mktemp)
+  if ! node "$SKILL_DIR/scripts/migrate-legacy-config.js" "$LEGACY_CONFIG_FILE" > "$TEMP_FILE"; then
+    rm -f "$TEMP_FILE"
+    echo "Migration failed. Your legacy and shared configs are untouched."
     exit 1
   fi
+  mv "$TEMP_FILE" "$SHARED_CONFIG_FILE"
   chmod 600 "$SHARED_CONFIG_FILE"
 
   # Backup legacy config
