@@ -14,7 +14,7 @@
     "imap": "^0.8.19",
     "imap-simple": "^5.1.0",
     "mailparser": "^3.9.3",
-    "nodemailer": "^7.0.13"
+    "nodemailer": "^9.0.3"
   },
   "keywords": [
     "imap",

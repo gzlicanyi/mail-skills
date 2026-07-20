@@ -48,91 +48,18 @@ fi
 
 # --- Migration logic ---
 if [ "$MIGRATE" = true ]; then
-  # Source the legacy .env to get variables
-  set -a
-  source "$LEGACY_CONFIG_FILE" 2>/dev/null
-  set +a
-
-  # Detect provider from IMAP_HOST
-  PROVIDER=$(node -e "
-    const { detectProvider } = require('$SKILL_DIR/scripts/providers');
-    const provider = detectProvider(process.env.IMAP_HOST || '');
-    console.log(provider || 'custom');
-  ")
-
+  # Migrate via a node script that parses the legacy .env with dotenv.
+  # NEVER use shell source or evaluate the legacy file — it is untrusted config text.
   mkdir -p -m 700 "$SHARED_CONFIG_DIR"
 
-  if [ "$PROVIDER" = "custom" ]; then
-    cat > "$SHARED_CONFIG_FILE" << EOF
-PROVIDER=custom
-USERNAME=${IMAP_USER:-}
-PASSWORD=${IMAP_PASS:-}
-IMAP_HOST=${IMAP_HOST:-}
-IMAP_PORT=${IMAP_PORT:-993}
-IMAP_TLS=${IMAP_TLS:-true}
-SMTP_HOST=${SMTP_HOST:-}
-SMTP_PORT=${SMTP_PORT:-587}
-SMTP_SECURE=${SMTP_SECURE:-false}
-IMAP_REJECT_UNAUTHORIZED=${IMAP_REJECT_UNAUTHORIZED:-true}
-SMTP_REJECT_UNAUTHORIZED=${SMTP_REJECT_UNAUTHORIZED:-true}
-ALLOWED_READ_DIRS=${ALLOWED_READ_DIRS:-$HOME/Downloads,$HOME/Documents}
-ALLOWED_WRITE_DIRS=${ALLOWED_WRITE_DIRS:-$HOME/Downloads}
-EOF
-  else
-    cat > "$SHARED_CONFIG_FILE" << EOF
-PROVIDER=$PROVIDER
-USERNAME=${IMAP_USER:-}
-PASSWORD=${IMAP_PASS:-}
-ALLOWED_READ_DIRS=${ALLOWED_READ_DIRS:-$HOME/Downloads,$HOME/Documents}
-ALLOWED_WRITE_DIRS=${ALLOWED_WRITE_DIRS:-$HOME/Downloads}
-EOF
+  TEMP_FILE=$(mktemp)
+  if ! node "$SKILL_DIR/scripts/migrate-legacy-config.js" "$LEGACY_CONFIG_FILE" > "$TEMP_FILE"; then
+    rm -f "$TEMP_FILE"
+    echo "Migration failed. Your legacy and shared configs are untouched."
+    exit 1
   fi
-
+  mv "$TEMP_FILE" "$SHARED_CONFIG_FILE"
   chmod 600 "$SHARED_CONFIG_FILE"
-
-  # Migrate named accounts from legacy config
-  while IFS='=' read -r key value; do
-    # Skip comments and empty lines
-    [[ "$key" =~ ^[[:space:]]*# ]] && continue
-    [[ -z "$key" ]] && continue
-
-    if [[ "$key" =~ ^([A-Z0-9]+)_IMAP_HOST$ ]]; then
-      NP="${BASH_REMATCH[1]}"
-      NPROVIDER=$(node -e "
-        const { detectProvider } = require('$SKILL_DIR/scripts/providers');
-        const provider = detectProvider('$value');
-        console.log(provider || 'custom');
-      ")
-      NPUSER=$(eval echo "\$${NP}_IMAP_USER")
-      NPPASS=$(eval echo "\$${NP}_IMAP_PASS")
-
-      if [ "$NPROVIDER" = "custom" ]; then
-        NPHOST="$value"
-        NPPORT=$(eval echo "\$${NP}_IMAP_PORT")
-        NPTLS=$(eval echo "\$${NP}_IMAP_TLS")
-        NPSMTP=$(eval echo "\$${NP}_SMTP_HOST")
-        NPSMTPPORT=$(eval echo "\$${NP}_SMTP_PORT")
-        NPSMTPSEC=$(eval echo "\$${NP}_SMTP_SECURE")
-        echo "" >> "$SHARED_CONFIG_FILE"
-        echo "# ${NP,,} account" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_PROVIDER=custom" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_USERNAME=${NPUSER}" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_PASSWORD=${NPPASS}" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_IMAP_HOST=${NPHOST}" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_IMAP_PORT=${NPPORT:-993}" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_IMAP_TLS=${NPTLS:-true}" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_SMTP_HOST=${NPSMTP}" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_SMTP_PORT=${NPSMTPPORT:-587}" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_SMTP_SECURE=${NPSMTPSEC:-false}" >> "$SHARED_CONFIG_FILE"
-      else
-        echo "" >> "$SHARED_CONFIG_FILE"
-        echo "# ${NP,,} account" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_PROVIDER=$NPROVIDER" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_USERNAME=${NPUSER}" >> "$SHARED_CONFIG_FILE"
-        echo "${NP}_PASSWORD=${NPPASS}" >> "$SHARED_CONFIG_FILE"
-      fi
-    fi
-  done < "$LEGACY_CONFIG_FILE"
 
   # Backup legacy config
   cp "$LEGACY_CONFIG_FILE" "${LEGACY_CONFIG_FILE}.bak"
